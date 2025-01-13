@@ -1,1 +1,1 @@
-Need to add .env file with discord token!
+Need to add .env file with discord and OpenAI token!
