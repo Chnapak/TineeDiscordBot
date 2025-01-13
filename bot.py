@@ -33,17 +33,18 @@ async def on_ready():
     try:
         synced = await bot.tree.sync()
         print(f"Synchronized {len(synced)} commands.")
+        await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.playing, name="helping you!"))
     except Exception as e:
         print(f"Error when synchronizing commands: {e}")
 
 # Ping-pong (No longer in use)
-#@bot.event
-#async def on_message(message):
-    #if message.author.bot:
-        #return
+# @bot.event
+# async def on_message(message):
+#     if message.author.bot:
+#         return
       
-    #if "ping" in message.content.lower():
-        #await message.channel.send("pong")
+#     if "ping" in message.content.lower():
+#         await message.channel.send("pong")
 
 # Reaction on the call of the name Tinee
 @bot.event
@@ -78,25 +79,5 @@ async def on_message(message):
 async def pozdrav(interaction: discord.Interaction):
     print(f"{interaction.user.mention} used /greeting")
     await interaction.response.send_message(f"Hello, {interaction.user.mention}!")
-
-
-# /question (no longer in use)
-#@bot.tree.command(name="question", description="Ask ChatGPT a question.")
-#async def dotaz(interaction: discord.Interaction, otazka: str):
-    #print(f"{interaction.user.mention} položil otázku: {otazka}")
-    #await interaction.response.defer()
-  
-    #try:
-        #response = openai.chat.completions.create(
-            #model="gpt-3.5-turbo",
-            #store=True,
-        #messages=[
-            #{"role": "system", "content": "Your name Tinee, you use she/her pronouns, you always respond in the language of the chatter"},
-            #{"role": "user", "content": otazka}
-        #]
-        #)
-        #await interaction.followup.send(f"{response.choices[0].message.content}")
-    #except Exception as e:
-        #await interaction.followup.send(f"Došlo k chybě: {e}")
 
 bot.run(DISCORD_TOKEN)
