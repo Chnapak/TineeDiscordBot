@@ -5,49 +5,51 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-# Načtení proměnných prostředí
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Kontrola, zda jsou klíče nastavené
+                                                                                        #KEYS#
+
 if not DISCORD_TOKEN or not OPENAI_API_KEY:
     raise ValueError("DISCORD_TOKEN nebo OPENAI_API_KEY není nastavený v souboru .env")
 
-# Nastavení OpenAI API klíče
+
 openai.api_key = OPENAI_API_KEY
 
-# Nastavení intents (potřebné pro správnou funkci)
+
 intents = discord.Intents.default()
 intents.message_content = True
 
-# Vytvoření instance bota
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Událost při spuštění bota
+
+                                                                                    #SETTING BOT UP#
+
 @bot.event
 async def on_ready():
     print(f"Bot je online jako {bot.user}")
     try:
-        synced = await bot.tree.sync()  # Synchronizuje slash commandy
+        synced = await bot.tree.sync()
         print(f"Synchronizováno {len(synced)} příkazů.")
     except Exception as e:
         print(f"Chyba při synchronizaci příkazů: {e}")
-# Příklad jednoduchého slash commandu
+
 @bot.tree.command(name="pozdrav", description="Pošle pozdrav!")
 async def pozdrav(interaction: discord.Interaction):
     print(f"{interaction.user.mention} použil příkaz /pozdrav")
     await interaction.response.send_message(f"Ahoj, {interaction.user.mention}!")
 
-# Slash command pro OpenAI generování odpovědi
+
 @bot.tree.command(name="dotaz", description="Polož otázku ChatGPT.")
 async def dotaz(interaction: discord.Interaction, otazka: str):
     print(f"{interaction.user.mention} položil otázku: {otazka}")
-    await interaction.response.defer()  # Odloží odpověď (pro delší dobu zpracování)
+    await interaction.response.defer()
     try:
-                # Volání OpenAI API
+
         response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",  # Model ChatGPT
+            model="gpt-3.5-turbo",
             store=True,
         messages=[
             {"role": "system", "content": "Odpovídej vždy co nejstručněji."},
@@ -58,30 +60,30 @@ async def dotaz(interaction: discord.Interaction, otazka: str):
     except Exception as e:
         await interaction.followup.send(f"Došlo k chybě: {e}")
 
-# Událost při přijetí zprávy
+
+                                                                                    #BOT EVENTS#
+
 @bot.event
 async def on_message(message):
-    # Kontrola, jestli zpráva pochází od uživatele a obsahuje "ping"
+
     if message.author.bot:
-        return  # Ignoruje zprávy od botů
-    if "ping" in message.content.lower():  # Porovnání malými písmeny
-        await message.channel.send("pong")  # Odpověď do stejného kanálu
+        return
+    if "ping" in message.content.lower():
+        await message.channel.send("pong")
 @bot.event
 async def on_message(message):
-    # Ignoruje zprávy od botů
     if message.author.bot:
         return
 
-    # Zpracování zpráv začínajících "bote"
     if message.content.lower().startswith("bote"):
-        prompt = message.content[5:].strip()  # Odstraní "bote" z textu
+        prompt = message.content[5:].strip()
         if not prompt:
             await message.channel.send("Jak ti mohu pomoci?")
             return
         
         await message.channel.send("Chvilku, přemýšlím...")
         try:
-            # Volání OpenAI
+
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -95,5 +97,4 @@ async def on_message(message):
     else:
         await bot.process_commands(message)
 
-# Spuštění bota
 bot.run(DISCORD_TOKEN)
