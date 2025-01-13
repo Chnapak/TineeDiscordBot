@@ -54,7 +54,7 @@ async def dotaz(interaction: discord.Interaction, otazka: str):
             {"role": "user", "content": otazka}
         ]
         )
-        await interaction.followup.send(f"🤔 Odpověď: {response.choices[0].message}")
+        await interaction.followup.send(f"🤔 Odpověď: {response.choices[0].message.content}")
     except Exception as e:
         await interaction.followup.send(f"Došlo k chybě: {e}")
 
