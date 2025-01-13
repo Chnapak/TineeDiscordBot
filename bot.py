@@ -51,13 +51,15 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    if message.guild is None:
+        return
     if "tinee" in message.content.lower():
         # Optional thing to say
         #await message.channel.send("Chvilku, přemýšlím...")
       
         try:
             response = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 store=True,
                 messages=[
                     {"role": "system", "content": "Your name Tinee, you use she/her pronouns, you always respond in the language of the chatter. Be sure to keep your messages short to feel realistic. Word personality can be described with these adjectives: sarcastic, funny, not bragging, knowledgable, proud, lazy."},
