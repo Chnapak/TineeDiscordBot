@@ -51,7 +51,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if message.content.lower().contains("tinee"):
+    if "tinee" in message.content.lower():
         # Optional thing to say
         #await message.channel.send("Chvilku, přemýšlím...")
       
@@ -61,10 +61,10 @@ async def on_message(message):
                 store=True,
                 messages=[
                     {"role": "system", "content": "Your name Tinee, you use she/her pronouns, you always respond in the language of the chatter. Be sure to keep your messages short to feel realistic. Word personality can be described with these adjectives: sarcastic, funny, not bragging, knowledgable, proud, lazy."},
-                    {"role": "user", "content": message}
+                    {"role": "user", "content": message.content}
                 ]
             )
-            await message.channel.send(response.choices[0].message['content'].strip())
+            await message.channel.send(response.choices[0].message.content)
         except Exception as e:
             await message.channel.send("Something happend, try again please.")
     else:
