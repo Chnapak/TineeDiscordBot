@@ -66,8 +66,34 @@ async def on_message(message):
         return  # Ignoruje zprávy od botů
     if "ping" in message.content.lower():  # Porovnání malými písmeny
         await message.channel.send("pong")  # Odpověď do stejného kanálu
+@bot.event
+async def on_message(message):
+    # Ignoruje zprávy od botů
+    if message.author.bot:
+        return
 
-    await bot.process_commands(message)  # Umožní zpracovat příkazy
+    # Zpracování zpráv začínajících "bote"
+    if message.content.lower().startswith("bote"):
+        prompt = message.content[5:].strip()  # Odstraní "bote" z textu
+        if not prompt:
+            await message.channel.send("Jak ti mohu pomoci?")
+            return
+        
+        await message.channel.send("Chvilku, přemýšlím...")
+        try:
+            # Volání OpenAI
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "Odpovídej stručně, jasně a v jazyce otázky."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            await message.channel.send(response.choices[0].message['content'].strip())
+        except Exception as e:
+            await message.channel.send("Něco se pokazilo. Zkus to prosím znovu.")
+    else:
+        await bot.process_commands(message)
 
 # Spuštění bota
 bot.run(DISCORD_TOKEN)
