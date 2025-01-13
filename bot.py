@@ -33,7 +33,6 @@ async def on_ready():
         print(f"Synchronizováno {len(synced)} příkazů.")
     except Exception as e:
         print(f"Chyba při synchronizaci příkazů: {e}")
-
 # Příklad jednoduchého slash commandu
 @bot.tree.command(name="pozdrav", description="Pošle pozdrav!")
 async def pozdrav(interaction: discord.Interaction):
@@ -46,13 +45,16 @@ async def dotaz(interaction: discord.Interaction, otazka: str):
     print(f"{interaction.user.mention} položil otázku: {otazka}")
     await interaction.response.defer()  # Odloží odpověď (pro delší dobu zpracování)
     try:
-        # Volání OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Nebo "gpt-4", pokud máš přístup
-            messages=[{"role": "user", "content": otazka}]
+                # Volání OpenAI API
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",  # Model ChatGPT
+            store=True,
+        messages=[
+            {"role": "system", "content": "Odpovídej vždy co nejstručněji."},
+            {"role": "user", "content": otazka}
+        ]
         )
-        odpoved = response["choices"][0]["message"]["content"]
-        await interaction.followup.send(f"🤔 Odpověď: {odpoved}")
+        await interaction.followup.send(f"🤔 Odpověď: {response.choices[0].message}")
     except Exception as e:
         await interaction.followup.send(f"Došlo k chybě: {e}")
 
