@@ -8,4 +8,4 @@ Commands example:
 
 /wake -wakes Tinee so she can work normally
 
-Tinee ... message to tinee's chatgpt model
+Tinee... -message to tinee's chatgpt model
