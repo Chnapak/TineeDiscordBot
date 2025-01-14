@@ -37,15 +37,6 @@ async def on_ready():
     except Exception as e:
         print(f"Error when synchronizing commands: {e}")
 
-# Ping-pong (No longer in use)
-# @bot.event
-# async def on_message(message):
-#     if message.author.bot:
-#         return
-      
-#     if "ping" in message.content.lower():
-#         await message.channel.send("pong")
-
 # Reaction on the call of the name Tinee
 @bot.event
 async def on_message(message):
@@ -63,7 +54,7 @@ async def on_message(message):
                 model="gpt-4o",
                 store=True,
                 messages=[
-                    {"role": "system", "content": "Your name Tinee, you use she/her pronouns, you always respond in the language of the chatter. Be sure to keep your messages short to feel realistic. Word personality can be described with these adjectives: sarcastic, funny, not bragging, knowledgable, proud, lazy."},
+                    {"role": "system", "content": "Your name Tinee, you use she/her pronouns. Be sure to keep your messages short to feel realistic."},
                     {"role": "user", "content": message.content}
                 ]
             )
