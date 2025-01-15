@@ -248,9 +248,6 @@ async def queue(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("The queue is empty.", ephemeral=True)
 
-
-
-
 @bot.tree.command(name="disable_command", description="Disables a specific bot command.")
 @app_commands.checks.has_permissions(administrator=True)
 async def disable_command(interaction: discord.Interaction, command_name: str):
