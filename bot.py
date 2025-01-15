@@ -38,31 +38,46 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
+# Přidáme globální slovník pro sledování historie chatů uživatelů
+user_chats = {}
+
 @bot.event
 async def on_message(message):
     global is_sleeping
 
-    if is_sleeping:
-        return  # Ignore all messages if bot is sleeping
-
-    if message.author.bot or not message.guild:  # Ignore bots and DMs
+    if is_sleeping or message.author.bot or not message.guild:  # Ignoruj bota a DM
         return
 
     if "tinee" in message.content.lower():
+        user_id = str(message.author.id)  # Unikátní identifikátor uživatele
+        if user_id not in user_chats:
+            # Pokud uživatel nemá historii, vytvoříme nový chat kontext
+            user_chats[user_id] = [
+                {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."}
+            ]
+        
+        # Přidáme aktuální zprávu uživatele do historie
+        user_chats[user_id].append({"role": "user", "content": message.content})
+        
         try:
+            # Posíláme celou historii chatu uživatele do OpenAI API
             response = openai.chat.completions.create(
                 model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."},
-                    {"role": "user", "content": message.content}
-                ]
+                messages=user_chats[user_id]
             )
-            await message.channel.send(response.choices[0].message.content)
+            
+            # Získáme odpověď a přidáme ji do historie
+            bot_response = response.choices[0].message.content
+            user_chats[user_id].append({"role": "assistant", "content": bot_response})
+            
+            # Odpovíme v kanálu
+            await message.channel.send(bot_response)
         except Exception as e:
             print(f"OpenAI error: {e}")
             await message.channel.send("Something went wrong, try again later.")
     else:
         await bot.process_commands(message)
+
 
 # BOT COMMANDS
 # /greeting
@@ -92,6 +107,18 @@ async def wake(interaction: discord.Interaction):
     global is_sleeping
     is_sleeping = False
     await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
+
+# Přidáme slash command na vymazání historie chatu
+@bot.tree.command(name="clear_chat", description="Clears your chat history with Tinee.")
+async def clear_chat(interaction: discord.Interaction):
+    user_id = str(interaction.user.id)  # Unikátní ID uživatele
+    
+    if user_id in user_chats:
+        del user_chats[user_id]  # Vymaže historii chatu uživatele
+        await interaction.response.send_message("Your chat history has been cleared.", ephemeral=True)
+    else:
+        await interaction.response.send_message("You don't have any chat history to clear.", ephemeral=True)
+
 
 # Error handler for admin-only commands
 @sleep.error
