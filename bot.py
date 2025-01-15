@@ -139,28 +139,28 @@ async def on_message(message):
         return
 
     if "tinee" in message.content.lower():
-        user_id = str(message.author.id)  # Unikátní identifikátor uživatele
+        user_id = str(message.author.id)  #Unique user id
         if user_id not in user_chats:
-            # Pokud uživatel nemá historii, vytvoříme nový chat kontext
+            #Creating new chat if user didnt have one 
             user_chats[user_id] = [
                 {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."}
             ]
         
-        # Přidáme aktuální zprávu uživatele do historie
+        #Adding current message to history
         user_chats[user_id].append({"role": "user", "content": message.content})
         
         try:
-            # Posíláme celou historii chatu uživatele do OpenAI API
+            #Sending chat history to openai api
             response = openai.chat.completions.create(
                 model="gpt-4",
                 messages=user_chats[user_id]
             )
             
-            # Získáme odpověď a přidáme ji do historie
+            #Gets a response and adds it to history
             bot_response = response.choices[0].message.content
             user_chats[user_id].append({"role": "assistant", "content": bot_response})
             
-            # Odpovíme v kanálu
+            #Respond in channel
             await message.channel.send(bot_response)
         except Exception as e:
             print(f"OpenAI error: {e}")
@@ -198,13 +198,13 @@ async def wake(interaction: discord.Interaction):
     is_sleeping = False
     await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
 
-# Přidáme slash command na vymazání historie chatu
+#Slash for cleaning history
 @bot.tree.command(name="clear_chat", description="Clears your chat history with Tinee.")
 async def clear_chat(interaction: discord.Interaction):
-    user_id = str(interaction.user.id)  # Unikátní ID uživatele
+    user_id = str(interaction.user.id)  #Unique user ID
     
     if user_id in user_chats:
-        del user_chats[user_id]  # Vymaže historii chatu uživatele
+        del user_chats[user_id]  #Clears chat history
         await interaction.response.send_message("Your chat history has been cleared.", ephemeral=True)
     else:
         await interaction.response.send_message("You don't have any chat history to clear.", ephemeral=True)
