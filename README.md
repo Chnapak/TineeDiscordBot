@@ -1,4 +1,4 @@
-You will find how to instal bot [here]https://github.com/Chnapak/TineeDiscordBot/wiki
+You will find how to instal bot here: https://github.com/Chnapak/TineeDiscordBot/wiki
 
 Commands example:
 
