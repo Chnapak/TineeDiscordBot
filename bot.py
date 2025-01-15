@@ -8,7 +8,6 @@ from discord import FFmpegPCMAudio
 import yt_dlp as youtube_dl
 
 # KEYS
-# Getting the tokens and keys from the .env file.
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -28,6 +27,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # BOT EVENTS
 is_sleeping = False  # Global variable for bot state
 user_chats = {}  # For tracking user chats
+disabled_commands = []  # List for disabled commands
+
 
 @bot.event
 async def on_ready():
@@ -37,6 +38,7 @@ async def on_ready():
         print(f"Synced {len(synced)} commands")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+
 
 @bot.event
 async def on_message(message):
@@ -53,7 +55,7 @@ async def on_message(message):
             ]
 
         user_chats[user_id].append({"role": "user", "content": message.content})
-        
+
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4",
@@ -68,32 +70,48 @@ async def on_message(message):
     else:
         await bot.process_commands(message)
 
+
+# Helper function to check if a command is disabled
+async def check_command_disabled(interaction: discord.Interaction):
+    global disabled_commands
+    if interaction.command.name in disabled_commands:
+        await interaction.response.send_message(f"The command `{interaction.command.name}` is currently disabled.", ephemeral=True)
+        return True
+    return False
+
+
 # BOT COMMANDS
 @bot.tree.command(name="greeting", description="Sends one back!")
 async def greeting(interaction: discord.Interaction):
-    global is_sleeping
-
-    if is_sleeping:
-        await interaction.response.send_message("Tinee is sleeping. She can't respond right now.", ephemeral=True)
+    if await check_command_disabled(interaction):
         return
     await interaction.response.send_message(f"Hello, {interaction.user.mention}!")
+
 
 @bot.tree.command(name="sleep", description="Tells Tinee to go to sleep.")
 @app_commands.checks.has_permissions(administrator=True)
 async def sleep(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
     global is_sleeping
     is_sleeping = True
     await interaction.response.send_message("Tinee is now asleep. She won't respond to commands.", ephemeral=True)
 
+
 @bot.tree.command(name="wake", description="Wakes Tinee up.")
 @app_commands.checks.has_permissions(administrator=True)
 async def wake(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
     global is_sleeping
     is_sleeping = False
     await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
 
+
 @bot.tree.command(name="join", description="Bot joins your current voice channel.")
 async def join(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
     if interaction.user.voice:
         channel = interaction.user.voice.channel
         if not interaction.guild.voice_client:
@@ -104,8 +122,11 @@ async def join(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("You need to be in a voice channel for me to join!", ephemeral=True)
 
+
 @bot.tree.command(name="leave", description="Bot leaves the voice channel.")
 async def leave(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
     voice_client = interaction.guild.voice_client
 
     if voice_client:
@@ -114,8 +135,11 @@ async def leave(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("I'm not connected to any voice channel!", ephemeral=True)
 
+
 @bot.tree.command(name="play", description="Plays a song in the voice channel.")
 async def play(interaction: discord.Interaction, search: str):
+    if await check_command_disabled(interaction):
+        return
     voice_client = interaction.guild.voice_client
 
     if not voice_client:
@@ -144,6 +168,33 @@ async def play(interaction: discord.Interaction, search: str):
         await interaction.followup.send(f"Now playing: {search}")
     else:
         await interaction.followup.send("I'm already playing a song. Please wait for the current track to finish.", ephemeral=True)
+
+
+@bot.tree.command(name="disable_command", description="Disables a specific bot command.")
+@app_commands.checks.has_permissions(administrator=True)
+async def disable_command(interaction: discord.Interaction, command_name: str):
+    global disabled_commands
+
+    if command_name in disabled_commands:
+        await interaction.response.send_message(f"The command `{command_name}` is already disabled.", ephemeral=True)
+    elif command_name in [cmd.name for cmd in bot.tree.get_commands()]:
+        disabled_commands.append(command_name)
+        await interaction.response.send_message(f"The command `{command_name}` has been disabled.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"The command `{command_name}` does not exist.", ephemeral=True)
+
+
+@bot.tree.command(name="enable_command", description="Enables a previously disabled bot command.")
+@app_commands.checks.has_permissions(administrator=True)
+async def enable_command(interaction: discord.Interaction, command_name: str):
+    global disabled_commands
+
+    if command_name in disabled_commands:
+        disabled_commands.remove(command_name)
+        await interaction.response.send_message(f"The command `{command_name}` has been enabled.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"The command `{command_name}` is not disabled or does not exist.", ephemeral=True)
+
 
 # Error handler for admin-only commands
 @sleep.error
