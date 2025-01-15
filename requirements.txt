@@ -1,3 +1,5 @@
 discord.py
 openai
 python-dotenv
+yt-dlp
+ffmpeg-python
