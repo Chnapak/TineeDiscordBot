@@ -6,6 +6,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord import FFmpegPCMAudio
 import yt_dlp as youtube_dl
+import _asyncio as asyncio
 
 # KEYS
 load_dotenv()
@@ -136,15 +137,28 @@ async def leave(interaction: discord.Interaction):
         await interaction.response.send_message("I'm not connected to any voice channel!", ephemeral=True)
 
 
+# Fronta skladeb (globalní proměnná)
+song_queue = []
+
 @bot.tree.command(name="play", description="Plays a song in the voice channel.")
 async def play(interaction: discord.Interaction, search: str):
     if await check_command_disabled(interaction):
         return
+
     voice_client = interaction.guild.voice_client
 
+    # Připojení k hlasovému kanálu, pokud není připojen
     if not voice_client:
-        await interaction.response.send_message("I'm not connected to a voice channel! Use `/join` to invite me.", ephemeral=True)
-        return
+        if interaction.user.voice:
+            channel = interaction.user.voice.channel
+            await channel.connect()
+            voice_client = interaction.guild.voice_client
+            # Odpovíme a ukončíme tuto část - defer už není třeba
+            await interaction.response.send_message(f"Joined {channel} and adding song to the queue...")
+        else:
+            # Pokud uživatel není v hlasovém kanálu
+            await interaction.response.send_message("You need to be in a voice channel for me to join and play music!")
+            return
 
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -152,22 +166,89 @@ async def play(interaction: discord.Interaction, search: str):
         'quiet': True,
     }
 
-    await interaction.response.defer()
+    # Pouze defer, protože bude následovat dlouhé zpracování a následná odpověď
+    if not interaction.response.is_done():
+        await interaction.response.defer()
 
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(f"ytsearch:{search}", download=False)
             url = info['entries'][0]['url']
+            title = info['entries'][0]['title']
         except Exception as e:
-            await interaction.followup.send("Couldn't find the song. Try a different search.", ephemeral=True)
+            await interaction.followup.send("Couldn't find the song. Try a different search.")
             return
 
-    audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
+    # Přidání skladby do fronty
+    song_queue.append((url, title))
+    await interaction.followup.send(f"Added `{title}` to the queue!")
+
+    # Pokud nic nehraje, spusť první skladbu z fronty
     if not voice_client.is_playing():
-        voice_client.play(audio_source, after=lambda e: print(f"Finished playing: {e}"))
-        await interaction.followup.send(f"Now playing: {search}")
+        await play_next_song(voice_client, interaction.channel)
+
+
+async def play_next_song(voice_client, channel):
+    if song_queue:
+        url, title = song_queue.pop(0)
+        audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
+
+        def after_playing(err):
+            if err:
+                print(f"Error after playing: {err}")
+            # Přehrání další skladby po skončení aktuální
+            coro = play_next_song(voice_client, channel)
+            fut = asyncio.run_coroutine_threadsafe(coro, bot.loop)
+            try:
+                fut.result()
+            except Exception as e:
+                print(f"Error in after_playing: {e}")
+
+        voice_client.play(audio_source, after=after_playing)
+        await channel.send(f"Now playing: `{title}`")
     else:
-        await interaction.followup.send("I'm already playing a song. Please wait for the current track to finish.", ephemeral=True)
+        await channel.send("Queue is empty. Add more songs with `/play`!")
+
+@bot.tree.command(name="pause", description="Pauses the current song.")
+async def pause(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
+
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_playing():
+        voice_client.pause()
+        await interaction.response.send_message("Playback paused.", ephemeral=True)
+    else:
+        await interaction.response.send_message("No song is currently playing.", ephemeral=True)
+
+
+@bot.tree.command(name="resume", description="Resumes the paused song.")
+async def resume(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
+
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_paused():
+        voice_client.resume()
+        await interaction.response.send_message("Playback resumed.", ephemeral=True)
+    else:
+        await interaction.response.send_message("No song is currently paused.", ephemeral=True)
+
+
+@bot.tree.command(name="queue", description="Shows the current song queue.")
+async def queue(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
+
+    if song_queue:
+        queue_list = "\n".join([f"{idx + 1}. {title}" for idx, (_, title) in enumerate(song_queue)])
+        await interaction.response.send_message(f"Current Queue:\n{queue_list}", ephemeral=True)
+    else:
+        await interaction.response.send_message("The queue is empty.", ephemeral=True)
+
+
 
 
 @bot.tree.command(name="disable_command", description="Disables a specific bot command.")
