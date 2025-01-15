@@ -1,6 +1,4 @@
-Need to run "pip install -r requirements.txt"
-
-then need to add .env file with discord and OpenAI token!
+You will find how to instal bot [here]https://github.com/Chnapak/TineeDiscordBot/wiki
 
 Commands example:
 
