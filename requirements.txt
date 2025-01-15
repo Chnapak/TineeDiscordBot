@@ -1,5 +1,0 @@
-discord.py
-openai
-python-dotenv
-yt-dlp
-_asyncio
