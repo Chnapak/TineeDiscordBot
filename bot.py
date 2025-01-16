@@ -189,20 +189,17 @@ async def play(interaction: discord.Interaction, search: str):
     if await check_command_disabled(interaction):
         return
 
-    voice_client = interaction.guild.voice_client
+    # Zkontroluj, zda uživatel je v hlasovém kanálu
+    if not interaction.user.voice:
+        await interaction.response.send_message("You need to be in a voice channel for me to join and play music!")
+        return
 
-    # Připojení k hlasovému kanálu, pokud není připojen
-    if not voice_client:
-        if interaction.user.voice:
-            channel = interaction.user.voice.channel
-            await channel.connect()
-            voice_client = interaction.guild.voice_client
-            # Odpovíme a ukončíme tuto část - defer už není třeba
-            await interaction.response.send_message(f"Joined {channel} and adding song to the queue...")
-        else:
-            # Pokud uživatel není v hlasovém kanálu
-            await interaction.response.send_message("You need to be in a voice channel for me to join and play music!")
-            return
+    # Získání nebo připojení bota do hlasového kanálu
+    voice_client = interaction.guild.voice_client
+    if not voice_client or not voice_client.is_connected():
+        channel = interaction.user.voice.channel
+        await channel.connect()
+        voice_client = interaction.guild.voice_client
 
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -210,7 +207,7 @@ async def play(interaction: discord.Interaction, search: str):
         'quiet': True,
     }
 
-    # Pouze defer, protože bude následovat dlouhé zpracování a následná odpověď
+    # Defer odpověď
     if not interaction.response.is_done():
         await interaction.response.defer()
 
@@ -232,6 +229,7 @@ async def play(interaction: discord.Interaction, search: str):
         await play_next_song(voice_client, interaction.channel)
 
 
+
 async def play_next_song(voice_client, channel):
     if song_queue:
         url, title = song_queue.pop(0)
@@ -240,13 +238,11 @@ async def play_next_song(voice_client, channel):
         def after_playing(err):
             if err:
                 print(f"Error after playing: {err}")
-            # Přehrání další skladby po skončení aktuální
-            coro = play_next_song(voice_client, channel)
-            fut = asyncio.run_coroutine_threadsafe(coro, bot.loop)
-            try:
-                fut.result()
-            except Exception as e:
-                print(f"Error in after_playing: {e}")
+            # Přehraj další skladbu pomocí asyncio.create_task
+            asyncio.create_task(play_next_song(voice_client, channel))
+
+        if voice_client.is_playing():
+            voice_client.stop()
 
         voice_client.play(audio_source, after=after_playing)
         await channel.send(f"Now playing: `{title}`")
