@@ -6,7 +6,7 @@ from discord.ext import commands
 from discord import app_commands
 from discord import FFmpegPCMAudio
 import yt_dlp as youtube_dl
-import _asyncio as asyncio
+import asyncio
 import json
 from asyncio import Lock
 
@@ -228,6 +228,23 @@ async def play(interaction: discord.Interaction, search: str):
     if not voice_client.is_playing():
         await play_next_song(voice_client, interaction.channel)
 
+async def get_similar_song(last_song_title):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'noplaylist': True,
+        'quiet': True,
+    }
+
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        try:
+            # Vyhledání podobné skladby
+            info = ydl.extract_info(f"ytsearch:{last_song_title} similar songs", download=False)
+            similar_url = info['entries'][0]['url']
+            similar_title = info['entries'][0]['title']
+            return similar_url, similar_title
+        except Exception as e:
+            print(f"Error fetching similar song: {e}")
+            return None, None
 
 
 async def play_next_song(voice_client, channel):
@@ -238,7 +255,6 @@ async def play_next_song(voice_client, channel):
         def after_playing(err):
             if err:
                 print(f"Error after playing: {err}")
-            # Přehraj další skladbu pomocí asyncio.create_task
             asyncio.create_task(play_next_song(voice_client, channel))
 
         if voice_client.is_playing():
@@ -247,7 +263,17 @@ async def play_next_song(voice_client, channel):
         voice_client.play(audio_source, after=after_playing)
         await channel.send(f"Now playing: `{title}`")
     else:
-        await channel.send("Queue is empty. Add more songs with `/play`!")
+        # Pokud je fronta prázdná, hledej podobnou skladbu
+        await channel.send("Queue is empty. Searching for a similar song...")
+        last_song_title = song_queue[-1][1] if song_queue else "popular music"  # Použije poslední skladbu nebo obecný žánr
+        url, title = await get_similar_song(last_song_title)
+        if url and title:
+            audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
+            voice_client.play(audio_source, after=lambda e: asyncio.create_task(play_next_song(voice_client, channel)))
+            await channel.send(f"Now playing a recommended song: `{title}`")
+        else:
+            await channel.send("Couldn't find a similar song. Add more songs to the queue!")
+
 
 @bot.tree.command(name="pause", description="Pauses the current song.")
 async def pause(interaction: discord.Interaction):
@@ -287,6 +313,23 @@ async def queue(interaction: discord.Interaction):
         await interaction.response.send_message(f"Current Queue:\n{queue_list}", ephemeral=True)
     else:
         await interaction.response.send_message("The queue is empty.", ephemeral=True)
+
+@bot.tree.command(name="skip", description="Skips the currently playing song.")
+async def skip(interaction: discord.Interaction):
+    if await check_command_disabled(interaction):
+        return
+
+    voice_client = interaction.guild.voice_client
+
+    if voice_client and voice_client.is_playing():
+        # Ukončení aktuálního přehrávání
+        voice_client.stop()
+        await interaction.response.send_message("Skipped the current song!")
+        
+        # Spuštění další skladby, pokud existuje
+        await play_next_song(voice_client, interaction.channel)
+    else:
+        await interaction.response.send_message("No song is currently playing to skip.", ephemeral=True)
 
 @bot.tree.command(name="disable_command", description="Disables a specific bot command.")
 @app_commands.checks.has_permissions(administrator=True)
