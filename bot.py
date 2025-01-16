@@ -7,11 +7,17 @@ from discord import app_commands
 from discord import FFmpegPCMAudio
 import yt_dlp as youtube_dl
 import _asyncio as asyncio
+import json
+from asyncio import Lock
 
 # KEYS
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+user_chats = {}  # Pro uchovávání historie chatu
+user_locks = {}  # Zámky pro uživatele
+
 
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN not set up in the .env file")
@@ -41,6 +47,28 @@ async def on_ready():
         print(f"Failed to sync commands: {e}")
 
 
+def load_user_chats():
+    global user_chats
+    try:
+        with open("user_chats.json", "r") as file:
+            user_chats = json.load(file)
+    except FileNotFoundError:
+        user_chats = {}
+
+# Funkce pro uložení historie uživatelů
+def save_user_chats():
+    with open("user_chats.json", "w") as file:
+        json.dump(user_chats, file)
+
+# Načti historii při spuštění
+load_user_chats()
+
+# Pomocná funkce pro zámek uživatele
+async def get_user_lock(user_id):
+    if user_id not in user_locks:
+        user_locks[user_id] = Lock()
+    return user_locks[user_id]
+
 @bot.event
 async def on_message(message):
     global is_sleeping
@@ -50,28 +78,40 @@ async def on_message(message):
 
     if "tinee" in message.content.lower():
         user_id = str(message.author.id)
-        if user_id not in user_chats:
-            user_chats[user_id] = [
-                {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."}
-            ]
 
-        user_chats[user_id].append({"role": "user", "content": message.content})
+        # Získat zámek pro uživatele
+        user_lock = await get_user_lock(user_id)
+        async with user_lock:
+            if user_id not in user_chats:
+                user_chats[user_id] = [
+                    {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."}
+                ]
 
-        if not OPENAI_API_KEY:
-            await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
-            return
+            # Přidání zprávy uživatele
+            user_chats[user_id].append({"role": "user", "content": message.content})
 
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-4",
-                messages=user_chats[user_id]
-            )
-            bot_response = response.choices[0].message.content
-            user_chats[user_id].append({"role": "assistant", "content": bot_response})
-            await message.channel.send(bot_response)
-        except Exception as e:
-            print(f"OpenAI error: {e}")
-            await message.channel.send("Something went wrong, try again later.")
+            # Omezit velikost historie
+            max_messages = 100
+            user_chats[user_id] = user_chats[user_id][-max_messages:]
+
+            if not OPENAI_API_KEY:
+                await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
+                return
+
+            try:
+                response = openai.chat.completions.create(
+                    model="gpt-4",
+                    messages=user_chats[user_id]
+                )
+                bot_response = response.choices[0].message.content
+                user_chats[user_id].append({"role": "assistant", "content": bot_response})
+                await message.channel.send(bot_response)
+            except Exception as e:
+                print(f"OpenAI error: {e}")
+                await message.channel.send("Something went wrong, try again later.")
+
+            # Uložit historii po každé zprávě
+            save_user_chats()
     else:
         await bot.process_commands(message)
 
