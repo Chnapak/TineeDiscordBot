@@ -13,8 +13,8 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not DISCORD_TOKEN or not OPENAI_API_KEY:
-    raise ValueError("DISCORD_TOKEN or OPENAI_API_KEY not set up in the .env file")
+if not DISCORD_TOKEN:
+    raise ValueError("DISCORD_TOKEN not set up in the .env file")
 
 # Setting up OpenAI API
 openai.api_key = OPENAI_API_KEY
@@ -56,6 +56,10 @@ async def on_message(message):
             ]
 
         user_chats[user_id].append({"role": "user", "content": message.content})
+
+        if not OPENAI_API_KEY:
+            await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
+            return
 
         try:
             response = openai.ChatCompletion.create(
