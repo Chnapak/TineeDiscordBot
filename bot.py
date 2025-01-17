@@ -255,7 +255,13 @@ async def play_next_song(voice_client, channel):
         def after_playing(err):
             if err:
                 print(f"Error after playing: {err}")
-            asyncio.create_task(play_next_song(voice_client, channel))
+            # Použij bot.loop pro spuštění další skladby
+            coro = play_next_song(voice_client, channel)
+            fut = asyncio.run_coroutine_threadsafe(coro, bot.loop)
+            try:
+                fut.result()
+            except Exception as e:
+                print(f"Error in after_playing: {e}")
 
         if voice_client.is_playing():
             voice_client.stop()
@@ -263,16 +269,17 @@ async def play_next_song(voice_client, channel):
         voice_client.play(audio_source, after=after_playing)
         await channel.send(f"Now playing: `{title}`")
     else:
-        # Pokud je fronta prázdná, hledej podobnou skladbu
+        # Pokud je fronta prázdná, hledá podobnou skladbu
         await channel.send("Queue is empty. Searching for a similar song...")
-        last_song_title = song_queue[-1][1] if song_queue else "popular music"  # Použije poslední skladbu nebo obecný žánr
+        last_song_title = song_queue[-1][1] if song_queue else "popular music"
         url, title = await get_similar_song(last_song_title)
         if url and title:
             audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
-            voice_client.play(audio_source, after=lambda e: asyncio.create_task(play_next_song(voice_client, channel)))
+            voice_client.play(audio_source, after=lambda e: asyncio.run_coroutine_threadsafe(play_next_song(voice_client, channel), bot.loop))
             await channel.send(f"Now playing a recommended song: `{title}`")
         else:
             await channel.send("Couldn't find a similar song. Add more songs to the queue!")
+
 
 
 @bot.tree.command(name="pause", description="Pauses the current song.")
