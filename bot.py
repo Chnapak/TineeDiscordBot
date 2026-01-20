@@ -495,6 +495,13 @@ def get_guild_volume(guild_id):
     config = get_guild_config(guild_id)
     return config.get("volume", 100)
 
+def build_track_link(url):
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    return f"https://www.youtube.com/watch?v={url}"
+
 def build_audio_source(url, guild_id):
     volume = get_guild_volume(guild_id) / 100.0
     source = FFmpegPCMAudio(
@@ -682,7 +689,20 @@ async def nowplaying(interaction: discord.Interaction):
     track = current_tracks.get(interaction.guild.id)
     if voice_client and track and (voice_client.is_playing() or voice_client.is_paused()):
         status = "Paused" if voice_client.is_paused() else "Now playing"
-        await interaction.response.send_message(f"{status}: `{track['title']}`")
+        config = get_guild_config(interaction.guild.id)
+        queue_len = len(get_guild_queue(interaction.guild.id))
+        embed = discord.Embed(
+            title=status,
+            description=track["title"],
+            color=discord.Color.teal()
+        )
+        link = build_track_link(track.get("url"))
+        if link:
+            embed.url = link
+        embed.add_field(name="Queue", value=str(queue_len), inline=True)
+        embed.add_field(name="Volume", value=f"{config.get('volume', 100)}%", inline=True)
+        embed.add_field(name="Autoplay", value="on" if config.get("autoplay", False) else "off", inline=True)
+        await interaction.response.send_message(embed=embed)
     else:
         await interaction.response.send_message("Nothing is currently playing.", ephemeral=True)
 
