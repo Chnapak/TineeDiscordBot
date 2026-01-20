@@ -1,0 +1,1 @@
+"""Tinee bot package."""

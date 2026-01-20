@@ -4,11 +4,11 @@ import discord
 from discord import FFmpegPCMAudio, PCMVolumeTransformer
 import yt_dlp as youtube_dl
 
-import guards
-import settings
-import state
-import storage
-import utils
+from . import guards
+from . import settings
+from . import state
+from . import storage
+from . import utils
 
 
 YDL_OPTS = {

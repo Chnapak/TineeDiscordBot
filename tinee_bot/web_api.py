@@ -1,8 +1,8 @@
 from aiohttp import web
 
-import settings
-import state
-import storage
+from . import settings
+from . import state
+from . import storage
 
 
 def add_cors_headers(response):

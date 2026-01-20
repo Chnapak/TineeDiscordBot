@@ -2,8 +2,8 @@ import asyncio
 
 import openai
 
-import settings
-import storage
+from . import settings
+from . import storage
 
 
 openai.api_key = settings.OPENAI_API_KEY

@@ -1,14 +1,14 @@
 import discord
 from discord.ext import commands
 
-import admin_commands
-import ai
-import music
-import settings
-import state
-import storage
-import user_commands
-import web_api
+from tinee_bot import admin_commands
+from tinee_bot import ai
+from tinee_bot import music
+from tinee_bot import settings
+from tinee_bot import state
+from tinee_bot import storage
+from tinee_bot import user_commands
+from tinee_bot import web_api
 
 
 if not settings.DISCORD_TOKEN:

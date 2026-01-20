@@ -1,6 +1,6 @@
 import discord
 
-import storage
+from . import storage
 
 
 async def check_command_blocked(interaction: discord.Interaction, allow_when_sleeping=False, require_guild=True):

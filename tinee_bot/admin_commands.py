@@ -1,9 +1,9 @@
 import discord
 from discord import app_commands
 
-import guards
-import state
-import storage
+from . import guards
+from . import state
+from . import storage
 
 
 def setup(bot):

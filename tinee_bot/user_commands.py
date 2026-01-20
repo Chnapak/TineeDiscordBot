@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 
 import discord
 
-import guards
-import settings
-import state
-import utils
+from . import guards
+from . import settings
+from . import state
+from . import utils
 
 
 def setup(bot):

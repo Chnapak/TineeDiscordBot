@@ -1,8 +1,8 @@
 import asyncio
 import json
 
-import settings
-import state
+from . import settings
+from . import state
 
 
 def load_user_chats():
