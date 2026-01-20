@@ -39,26 +39,9 @@ python bot.py
 - `CONFIG_API_TOKEN` (optional): token for API requests if you expose it.
 
 ## Commands
-- `/greeting`: say hi.
-- `/sleep` / `/wake`: pause or resume command handling (admin only).
-- `/join` / `/leave`: connect or disconnect from voice.
-- `/play <query>`: search and play a track.
-- `/pause` / `/resume`: control playback.
-- `/queue`: show the current queue.
-- `/nowplaying`: show the current track.
-- `/skip`: skip the current track.
-- `/remove <position>`: remove a song from the queue.
-- `/clear`: clear the queue.
-- `/volume <0-200>`: set playback volume.
-- `/autoplay <true|false>`: toggle autoplay when the queue ends.
-- `/disable_command <name>` / `/enable_command <name>`: toggle a command (admin only).
-- `/config`: show current per-server AI settings (admin only).
-- `/set_ai <enabled>`: enable/disable AI replies (admin only).
-- `/set_ai_trigger <keyword|mention|both> [keyword]`: set trigger mode, optionally update keyword (admin only).
-- `/set_ai_keyword <keyword>`: update the keyword trigger (admin only).
-- `/allow_ai_channel <channel>`: allow AI replies in a channel (admin only).
-- `/block_ai_channel <channel>`: block AI replies in a channel (admin only).
-- `/clear_ai_channels`: allow AI replies in all channels (admin only).
+- **User**: `/help`, `/greeting`, `/ping`, `/uptime`, `/avatar`, `/userinfo`, `/serverinfo`, `/roll`, `/coinflip`, `/choose`, `/8ball`
+- **Music**: `/join`, `/leave`, `/play <query>`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/skip`, `/remove <position>`, `/clear`, `/volume <0-200>`, `/autoplay <true|false>`
+- **Admin**: `/sleep`, `/wake`, `/disable_command <name>`, `/enable_command <name>`, `/config`, `/set_ai <enabled>`, `/set_ai_trigger <keyword|mention|both> [keyword]`, `/set_ai_keyword <keyword>`, `/allow_ai_channel <channel>`, `/block_ai_channel <channel>`, `/clear_ai_channels`
 
 ## Notes
 - The bot only responds in servers (not DMs).
