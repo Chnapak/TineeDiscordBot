@@ -1,9 +1,9 @@
 # TineeDiscordBot
 
-A Discord bot with slash commands, AI chat replies (when a message contains "tinee"), and basic music playback.
+A Discord bot with slash commands, AI chat replies, and basic music playback.
 
 ## Features
-- AI replies with short, in-character responses.
+- AI replies with short, in-character responses and per-server configuration.
 - Music playback via YouTube search with per-guild queues.
 - Admin controls: `/sleep`, `/wake`, `/disable_command`, `/enable_command`.
 - Persistent user chat history in `user_chats.json`.
@@ -43,7 +43,14 @@ python bot.py
 - `/queue`: show the current queue.
 - `/skip`: skip the current track.
 - `/disable_command <name>` / `/enable_command <name>`: toggle a command (admin only).
+- `/config`: show current per-server AI settings (admin only).
+- `/set_ai <enabled>`: enable/disable AI replies (admin only).
+- `/set_ai_trigger <keyword|mention|both> [keyword]`: set trigger mode, optionally update keyword (admin only).
+- `/set_ai_keyword <keyword>`: update the keyword trigger (admin only).
+- `/allow_ai_channel <channel>`: allow AI replies in a channel (admin only).
+- `/block_ai_channel <channel>`: block AI replies in a channel (admin only).
+- `/clear_ai_channels`: allow AI replies in all channels (admin only).
 
 ## Notes
 - The bot only responds in servers (not DMs).
-- AI replies trigger only when a message contains "tinee".
+- AI replies can trigger by keyword, mention, or both depending on per-server config.

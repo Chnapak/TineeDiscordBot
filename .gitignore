@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Bot runtime data
+guild_config.json
+
 # User-specific files
 *.rsuser
 *.suo

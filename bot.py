@@ -29,10 +29,21 @@ FFMPEG_PATH = resolve_ffmpeg_path()
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
 SYSTEM_PROMPT = "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."
+CONFIG_FILE = "guild_config.json"
+
+def new_guild_config():
+    return {
+        "ai_enabled": True,
+        "ai_trigger": "keyword",
+        "ai_keyword": "tinee",
+        "ai_channels": []
+    }
 
 user_chats = {}  # Pro uchovávání historie chatu
 user_locks = {}  # Zámky pro uživatele
 user_chats_lock = Lock()
+guild_configs = {}
+guild_configs_lock = Lock()
 
 
 if not DISCORD_TOKEN:
@@ -88,6 +99,84 @@ async def save_user_chats():
     async with user_chats_lock:
         await asyncio.to_thread(save_user_chats_sync)
 
+def load_guild_configs():
+    global guild_configs
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        if isinstance(data, dict):
+            guild_configs = data
+        else:
+            guild_configs = {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        guild_configs = {}
+
+def save_guild_configs_sync():
+    with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+        json.dump(guild_configs, file)
+
+async def save_guild_configs():
+    async with guild_configs_lock:
+        await asyncio.to_thread(save_guild_configs_sync)
+
+def normalize_guild_config(config):
+    if not isinstance(config, dict):
+        return new_guild_config()
+    if "ai_enabled" not in config:
+        config["ai_enabled"] = True
+    if "ai_trigger" not in config:
+        config["ai_trigger"] = "keyword"
+    if "ai_keyword" not in config:
+        config["ai_keyword"] = "tinee"
+    if "ai_channels" not in config:
+        config["ai_channels"] = []
+
+    config["ai_enabled"] = bool(config.get("ai_enabled"))
+    trigger = str(config.get("ai_trigger", "keyword")).lower()
+    if trigger not in ("keyword", "mention", "both"):
+        trigger = "keyword"
+    config["ai_trigger"] = trigger
+
+    keyword = str(config.get("ai_keyword", "tinee")).strip()
+    config["ai_keyword"] = keyword if keyword else "tinee"
+
+    channels = config.get("ai_channels", [])
+    if not isinstance(channels, list):
+        channels = []
+    normalized_channels = []
+    for channel_id in channels:
+        try:
+            normalized_channels.append(int(channel_id))
+        except (TypeError, ValueError):
+            continue
+    config["ai_channels"] = normalized_channels
+    return config
+
+def get_guild_config(guild_id):
+    guild_key = str(guild_id)
+    if guild_key not in guild_configs:
+        guild_configs[guild_key] = new_guild_config()
+    guild_configs[guild_key] = normalize_guild_config(guild_configs[guild_key])
+    return guild_configs[guild_key]
+
+def should_respond_to_message(message, config):
+    if not config.get("ai_enabled", True):
+        return False
+    allowed_channels = config.get("ai_channels", [])
+    if allowed_channels and message.channel.id not in allowed_channels:
+        return False
+
+    trigger = config.get("ai_trigger", "keyword")
+    keyword = str(config.get("ai_keyword", "tinee")).lower()
+    content = (message.content or "").lower()
+    is_mentioned = bot.user in message.mentions if bot.user else False
+
+    if trigger == "mention":
+        return is_mentioned
+    if trigger == "both":
+        return (keyword and keyword in content) or is_mentioned
+    return keyword and keyword in content
+
 def is_guild_sleeping(guild_id):
     return guild_id in sleeping_guilds
 
@@ -114,6 +203,7 @@ def get_or_create_user_history(guild_id, user_id):
 
 # Načti historii při spuštění
 load_user_chats()
+load_guild_configs()
 
 # Pomocná funkce pro zámek uživatele
 async def get_user_lock(guild_id, user_id):
@@ -138,46 +228,48 @@ async def on_message(message):
     if is_guild_sleeping(guild_id):
         return
 
-    if "tinee" in message.content.lower():
-        user_id = message.author.id
-
-        # Získat zámek pro uživatele
-        user_lock = await get_user_lock(guild_id, user_id)
-        async with user_lock:
-            history = get_or_create_user_history(guild_id, user_id)
-
-            # Přidání zprávy uživatele
-            history.append({"role": "user", "content": message.content})
-
-            # Omezit velikost historie, ale zachovat system prompt
-            max_messages = 100
-            if len(history) > max_messages:
-                system_prompt = history[0] if history and history[0].get("role") == "system" else None
-                recent = history[-(max_messages - 1):]
-                if system_prompt and system_prompt not in recent:
-                    new_history = [system_prompt] + recent
-                else:
-                    new_history = recent
-                history.clear()
-                history.extend(new_history)
-
-            if not OPENAI_API_KEY:
-                await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
-                return
-
-            try:
-                response = await fetch_openai_response(history)
-                bot_response = response.choices[0].message.content
-                history.append({"role": "assistant", "content": bot_response})
-                await message.channel.send(bot_response)
-            except Exception as e:
-                print(f"OpenAI error: {e}")
-                await message.channel.send("Something went wrong, try again later.")
-
-            # Uložit historii po každé zprávě
-            await save_user_chats()
-    else:
+    config = get_guild_config(guild_id)
+    if not should_respond_to_message(message, config):
         await bot.process_commands(message)
+        return
+
+    user_id = message.author.id
+
+    # Získat zámek pro uživatele
+    user_lock = await get_user_lock(guild_id, user_id)
+    async with user_lock:
+        history = get_or_create_user_history(guild_id, user_id)
+
+        # Přidání zprávy uživatele
+        history.append({"role": "user", "content": message.content})
+
+        # Omezit velikost historie, ale zachovat system prompt
+        max_messages = 100
+        if len(history) > max_messages:
+            system_prompt = history[0] if history and history[0].get("role") == "system" else None
+            recent = history[-(max_messages - 1):]
+            if system_prompt and system_prompt not in recent:
+                new_history = [system_prompt] + recent
+            else:
+                new_history = recent
+            history.clear()
+            history.extend(new_history)
+
+        if not OPENAI_API_KEY:
+            await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
+            return
+
+        try:
+            response = await fetch_openai_response(history)
+            bot_response = response.choices[0].message.content
+            history.append({"role": "assistant", "content": bot_response})
+            await message.channel.send(bot_response)
+        except Exception as e:
+            print(f"OpenAI error: {e}")
+            await message.channel.send("Something went wrong, try again later.")
+
+        # Uložit historii po každé zprávě
+        await save_user_chats()
 
 
 # Helper function to check if a command is disabled or bot is sleeping
@@ -221,6 +313,137 @@ async def wake(interaction: discord.Interaction):
         return
     sleeping_guilds.discard(interaction.guild.id)
     await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
+
+@bot.tree.command(name="config", description="Shows the current per-server configuration.")
+@app_commands.checks.has_permissions(administrator=True)
+async def config(interaction: discord.Interaction):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    channel_ids = config.get("ai_channels", [])
+    if channel_ids:
+        channel_labels = []
+        for channel_id in channel_ids:
+            channel = interaction.guild.get_channel(channel_id)
+            channel_labels.append(channel.mention if channel else str(channel_id))
+        channels_text = ", ".join(channel_labels)
+    else:
+        channels_text = "all channels"
+    await interaction.response.send_message(
+        "AI enabled: {enabled}\nAI trigger: {trigger}\nAI keyword: {keyword}\nAI channels: {channels}".format(
+            enabled=config.get("ai_enabled", True),
+            trigger=config.get("ai_trigger", "keyword"),
+            keyword=config.get("ai_keyword", "tinee"),
+            channels=channels_text
+        ),
+        ephemeral=True
+    )
+
+@bot.tree.command(name="set_ai", description="Enable or disable AI replies on this server.")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_ai(interaction: discord.Interaction, enabled: bool):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    config["ai_enabled"] = enabled
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"AI replies are now {'enabled' if enabled else 'disabled'} for this server.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="set_ai_trigger", description="Sets how AI replies are triggered.")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.choices(mode=[
+    app_commands.Choice(name="keyword", value="keyword"),
+    app_commands.Choice(name="mention", value="mention"),
+    app_commands.Choice(name="both", value="both")
+])
+async def set_ai_trigger(interaction: discord.Interaction, mode: app_commands.Choice[str], keyword: str = None):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    config["ai_trigger"] = mode.value
+    if keyword is not None:
+        keyword = keyword.strip()
+        if keyword:
+            config["ai_keyword"] = keyword
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"AI trigger set to `{mode.value}`.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="set_ai_keyword", description="Sets the keyword that triggers AI replies.")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_ai_keyword(interaction: discord.Interaction, keyword: str):
+    if await check_command_blocked(interaction):
+        return
+    keyword = keyword.strip()
+    if not keyword:
+        await interaction.response.send_message("Keyword cannot be empty.", ephemeral=True)
+        return
+    config = get_guild_config(interaction.guild.id)
+    config["ai_keyword"] = keyword
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"AI keyword set to `{keyword}`.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="allow_ai_channel", description="Allow AI replies in a specific channel.")
+@app_commands.checks.has_permissions(administrator=True)
+async def allow_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    channels = config.get("ai_channels", [])
+    if not channels:
+        channels = []
+    if channel.id in channels:
+        await interaction.response.send_message(f"{channel.mention} is already allowed.", ephemeral=True)
+        return
+    channels.append(channel.id)
+    config["ai_channels"] = channels
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"AI replies are now allowed in {channel.mention}.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="block_ai_channel", description="Disallow AI replies in a specific channel.")
+@app_commands.checks.has_permissions(administrator=True)
+async def block_ai_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    channels = config.get("ai_channels", [])
+    if not channels:
+        await interaction.response.send_message("AI is allowed in all channels. Use /allow_ai_channel to set a whitelist first.", ephemeral=True)
+        return
+    if channel.id not in channels:
+        await interaction.response.send_message(f"{channel.mention} is not in the allow list.", ephemeral=True)
+        return
+    channels.remove(channel.id)
+    config["ai_channels"] = channels
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"AI replies are now blocked in {channel.mention}.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="clear_ai_channels", description="Allow AI replies in all channels.")
+@app_commands.checks.has_permissions(administrator=True)
+async def clear_ai_channels(interaction: discord.Interaction):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    config["ai_channels"] = []
+    await save_guild_configs()
+    await interaction.response.send_message(
+        "AI replies are now allowed in all channels.",
+        ephemeral=True
+    )
 
 
 @bot.tree.command(name="join", description="Bot joins your current voice channel.")
