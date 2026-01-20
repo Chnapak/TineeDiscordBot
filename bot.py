@@ -4,7 +4,7 @@ import openai
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord import FFmpegPCMAudio
+from discord import FFmpegPCMAudio, PCMVolumeTransformer
 import yt_dlp as youtube_dl
 import asyncio
 import json
@@ -36,7 +36,9 @@ def new_guild_config():
         "ai_enabled": True,
         "ai_trigger": "keyword",
         "ai_keyword": "tinee",
-        "ai_channels": []
+        "ai_channels": [],
+        "autoplay": False,
+        "volume": 100
     }
 
 user_chats = {}  # Pro uchovávání historie chatu
@@ -63,6 +65,7 @@ sleeping_guilds = set()
 disabled_commands_by_guild = {}
 song_queues = {}
 last_song_titles = {}
+current_tracks = {}
 
 
 @bot.event
@@ -130,6 +133,10 @@ def normalize_guild_config(config):
         config["ai_keyword"] = "tinee"
     if "ai_channels" not in config:
         config["ai_channels"] = []
+    if "autoplay" not in config:
+        config["autoplay"] = False
+    if "volume" not in config:
+        config["volume"] = 100
 
     config["ai_enabled"] = bool(config.get("ai_enabled"))
     trigger = str(config.get("ai_trigger", "keyword")).lower()
@@ -150,6 +157,13 @@ def normalize_guild_config(config):
         except (TypeError, ValueError):
             continue
     config["ai_channels"] = normalized_channels
+
+    config["autoplay"] = bool(config.get("autoplay"))
+    try:
+        volume = int(config.get("volume", 100))
+    except (TypeError, ValueError):
+        volume = 100
+    config["volume"] = max(0, min(200, volume))
     return config
 
 def get_guild_config(guild_id):
@@ -330,11 +344,13 @@ async def config(interaction: discord.Interaction):
     else:
         channels_text = "all channels"
     await interaction.response.send_message(
-        "AI enabled: {enabled}\nAI trigger: {trigger}\nAI keyword: {keyword}\nAI channels: {channels}".format(
+        "AI enabled: {enabled}\nAI trigger: {trigger}\nAI keyword: {keyword}\nAI channels: {channels}\nAutoplay: {autoplay}\nVolume: {volume}%".format(
             enabled=config.get("ai_enabled", True),
             trigger=config.get("ai_trigger", "keyword"),
             keyword=config.get("ai_keyword", "tinee"),
-            channels=channels_text
+            channels=channels_text,
+            autoplay=config.get("autoplay", False),
+            volume=config.get("volume", 100)
         ),
         ephemeral=True
     )
@@ -475,6 +491,20 @@ async def leave(interaction: discord.Interaction):
 
 
 # Fronta skladeb (per-guild)
+def get_guild_volume(guild_id):
+    config = get_guild_config(guild_id)
+    return config.get("volume", 100)
+
+def build_audio_source(url, guild_id):
+    volume = get_guild_volume(guild_id) / 100.0
+    source = FFmpegPCMAudio(
+        url,
+        executable=FFMPEG_PATH,
+        before_options=FFMPEG_BEFORE_OPTIONS,
+        options=FFMPEG_OPTIONS
+    )
+    return PCMVolumeTransformer(source, volume=volume)
+
 def get_guild_queue(guild_id):
     if guild_id not in song_queues:
         song_queues[guild_id] = []
@@ -570,12 +600,8 @@ async def play_next_song(voice_client, channel, guild_id):
     if queue:
         url, title = queue.pop(0)
         last_song_titles[guild_id] = title
-        audio_source = FFmpegPCMAudio(
-            url,
-            executable=FFMPEG_PATH,
-            before_options=FFMPEG_BEFORE_OPTIONS,
-            options=FFMPEG_OPTIONS
-        )
+        current_tracks[guild_id] = {"title": title, "url": url}
+        audio_source = build_audio_source(url, guild_id)
 
         if voice_client.is_playing():
             voice_client.stop()
@@ -583,6 +609,12 @@ async def play_next_song(voice_client, channel, guild_id):
         voice_client.play(audio_source, after=after_playing)
         await channel.send(f"Now playing: `{title}`")
     else:
+        current_tracks.pop(guild_id, None)
+        config = get_guild_config(guild_id)
+        if not config.get("autoplay", False):
+            await channel.send("Queue is empty. Add more songs to the queue!")
+            return
+
         # Pokud je fronta prázdná, hledá podobnou skladbu
         await channel.send("Queue is empty. Searching for a similar song...")
         seed_title = last_song_titles.get(guild_id)
@@ -592,12 +624,8 @@ async def play_next_song(voice_client, channel, guild_id):
         url, title = await get_similar_song(seed_title)
         if url and title:
             last_song_titles[guild_id] = title
-            audio_source = FFmpegPCMAudio(
-                url,
-                executable=FFMPEG_PATH,
-                before_options=FFMPEG_BEFORE_OPTIONS,
-                options=FFMPEG_OPTIONS
-            )
+            current_tracks[guild_id] = {"title": title, "url": url}
+            audio_source = build_audio_source(url, guild_id)
             voice_client.play(audio_source, after=after_playing)
             await channel.send(f"Now playing a recommended song: `{title}`")
         else:
@@ -644,6 +672,76 @@ async def queue(interaction: discord.Interaction):
         await interaction.response.send_message(f"Current Queue:\n{queue_list}", ephemeral=True)
     else:
         await interaction.response.send_message("The queue is empty.", ephemeral=True)
+
+@bot.tree.command(name="nowplaying", description="Shows the currently playing song.")
+async def nowplaying(interaction: discord.Interaction):
+    if await check_command_blocked(interaction):
+        return
+
+    voice_client = interaction.guild.voice_client
+    track = current_tracks.get(interaction.guild.id)
+    if voice_client and track and (voice_client.is_playing() or voice_client.is_paused()):
+        status = "Paused" if voice_client.is_paused() else "Now playing"
+        await interaction.response.send_message(f"{status}: `{track['title']}`")
+    else:
+        await interaction.response.send_message("Nothing is currently playing.", ephemeral=True)
+
+@bot.tree.command(name="volume", description="Sets playback volume (0-200).")
+async def volume(interaction: discord.Interaction, level: int):
+    if await check_command_blocked(interaction):
+        return
+    if level < 0 or level > 200:
+        await interaction.response.send_message("Volume must be between 0 and 200.", ephemeral=True)
+        return
+
+    config = get_guild_config(interaction.guild.id)
+    config["volume"] = level
+    await save_guild_configs()
+
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.source and hasattr(voice_client.source, "volume"):
+        voice_client.source.volume = level / 100.0
+
+    await interaction.response.send_message(f"Volume set to {level}%.", ephemeral=True)
+
+@bot.tree.command(name="autoplay", description="Enable or disable autoplay when the queue is empty.")
+async def autoplay(interaction: discord.Interaction, enabled: bool):
+    if await check_command_blocked(interaction):
+        return
+    config = get_guild_config(interaction.guild.id)
+    config["autoplay"] = enabled
+    await save_guild_configs()
+    await interaction.response.send_message(
+        f"Autoplay is now {'enabled' if enabled else 'disabled'}.",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="remove", description="Removes a song from the queue by position.")
+async def remove(interaction: discord.Interaction, position: int):
+    if await check_command_blocked(interaction):
+        return
+
+    queue = get_guild_queue(interaction.guild.id)
+    if not queue:
+        await interaction.response.send_message("The queue is empty.", ephemeral=True)
+        return
+    index = position - 1
+    if index < 0 or index >= len(queue):
+        await interaction.response.send_message("Invalid queue position.", ephemeral=True)
+        return
+    _, title = queue.pop(index)
+    await interaction.response.send_message(f"Removed `{title}` from the queue.", ephemeral=True)
+
+@bot.tree.command(name="clear", description="Clears the song queue.")
+async def clear(interaction: discord.Interaction):
+    if await check_command_blocked(interaction):
+        return
+    queue = get_guild_queue(interaction.guild.id)
+    if queue:
+        queue.clear()
+        await interaction.response.send_message("Cleared the queue.", ephemeral=True)
+    else:
+        await interaction.response.send_message("The queue is already empty.", ephemeral=True)
 
 @bot.tree.command(name="skip", description="Skips the currently playing song.")
 async def skip(interaction: discord.Interaction):

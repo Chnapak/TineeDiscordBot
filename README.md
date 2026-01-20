@@ -4,7 +4,7 @@ A Discord bot with slash commands, AI chat replies, and basic music playback.
 
 ## Features
 - AI replies with short, in-character responses and per-server configuration.
-- Music playback via YouTube search with per-guild queues.
+- Music playback via YouTube search with per-guild queues and settings.
 - Admin controls: `/sleep`, `/wake`, `/disable_command`, `/enable_command`.
 - Persistent user chat history in `user_chats.json`.
 
@@ -41,7 +41,12 @@ python bot.py
 - `/play <query>`: search and play a track.
 - `/pause` / `/resume`: control playback.
 - `/queue`: show the current queue.
+- `/nowplaying`: show the current track.
 - `/skip`: skip the current track.
+- `/remove <position>`: remove a song from the queue.
+- `/clear`: clear the queue.
+- `/volume <0-200>`: set playback volume.
+- `/autoplay <true|false>`: toggle autoplay when the queue ends.
 - `/disable_command <name>` / `/enable_command <name>`: toggle a command (admin only).
 - `/config`: show current per-server AI settings (admin only).
 - `/set_ai <enabled>`: enable/disable AI replies (admin only).
