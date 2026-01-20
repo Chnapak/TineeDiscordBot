@@ -24,6 +24,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+    await bot.change_presence(
+        activity=discord.Activity(type=discord.ActivityType.listening, name="/help")
+    )
     if not state.commands_synced:
         state.commands_synced = True
         try:
