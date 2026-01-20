@@ -19,7 +19,7 @@ A Discord bot with slash commands, AI chat replies, and basic music playback.
 3. Install dependencies:
 
 ```bash
-pip install -U discord.py[voice] openai python-dotenv yt-dlp aiohttp
+pip install -U -r requirements.txt
 ```
 
 4. Run the bot:
