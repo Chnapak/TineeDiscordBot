@@ -1,3 +1,49 @@
-You can find everything you might be interested in on our wiki:
+# TineeDiscordBot
 
-https://github.com/Chnapak/TineeDiscordBot/wiki
+A Discord bot with slash commands, AI chat replies (when a message contains "tinee"), and basic music playback.
+
+## Features
+- AI replies with short, in-character responses.
+- Music playback via YouTube search with per-guild queues.
+- Admin controls: `/sleep`, `/wake`, `/disable_command`, `/enable_command`.
+- Persistent user chat history in `user_chats.json`.
+
+## Requirements
+- Python 3.10+
+- ffmpeg (available on PATH or configured with `FFMPEG_PATH`)
+- Discord bot token
+
+## Setup
+1. Create a Discord application and bot, then enable the Message Content intent.
+2. Copy `.env.example` to `.env` and fill in your values.
+3. Install dependencies:
+
+```bash
+pip install -U discord.py[voice] openai python-dotenv yt-dlp
+```
+
+4. Run the bot:
+
+```bash
+python bot.py
+```
+
+## Environment variables
+- `DISCORD_TOKEN` (required): your bot token.
+- `OPENAI_API_KEY` (optional): enables AI replies.
+- `OPENAI_MODEL` (optional): defaults to `gpt-4`.
+- `FFMPEG_PATH` (optional): path to `ffmpeg` binary if not on PATH.
+
+## Commands
+- `/greeting`: say hi.
+- `/sleep` / `/wake`: pause or resume command handling (admin only).
+- `/join` / `/leave`: connect or disconnect from voice.
+- `/play <query>`: search and play a track.
+- `/pause` / `/resume`: control playback.
+- `/queue`: show the current queue.
+- `/skip`: skip the current track.
+- `/disable_command <name>` / `/enable_command <name>`: toggle a command (admin only).
+
+## Notes
+- The bot only responds in servers (not DMs).
+- AI replies trigger only when a message contains "tinee".
