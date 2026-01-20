@@ -9,7 +9,7 @@ A Discord bot with slash commands, AI chat replies, and basic music playback.
 - Persistent user chat history in `user_chats.json`.
 
 ## Requirements
-- Python 3.10+
+- Python 3.10+ (3.12 recommended; 3.13 uses `audioop-lts` for voice)
 - ffmpeg (available on PATH or configured with `FFMPEG_PATH`)
 - Discord bot token
 

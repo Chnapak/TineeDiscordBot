@@ -3,3 +3,4 @@ openai
 python-dotenv
 yt-dlp
 aiohttp
+audioop-lts; python_version >= "3.13"
