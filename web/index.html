@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tinee Bot Config</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Tinee Control Room</p>
+          <h1>Server config, without the drama</h1>
+          <p class="subhead">Edit AI triggers, channels, and music settings from a local web UI.</p>
+        </div>
+        <div class="pulse"></div>
+      </header>
+
+      <section class="panel">
+        <h2>Connection</h2>
+        <div class="grid">
+          <label>
+            API base URL
+            <input id="apiBase" type="text" placeholder="http://bot-host:8080" />
+          </label>
+          <label>
+            API token (optional)
+            <input id="apiToken" type="password" placeholder="Leave empty if not used" />
+          </label>
+          <div class="actions">
+            <button id="connectBtn">Load servers</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Server</h2>
+        <div class="grid">
+          <label>
+            Select server
+            <select id="guildSelect">
+              <option value="">Select a server...</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button id="refreshBtn" class="ghost" disabled>Refresh</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>AI Settings</h2>
+        <div class="grid">
+          <label class="toggle">
+            <input id="aiEnabled" type="checkbox" />
+            <span>AI replies enabled</span>
+          </label>
+          <label>
+            Trigger mode
+            <select id="aiTrigger">
+              <option value="keyword">Keyword</option>
+              <option value="mention">Mention</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+          <label>
+            Keyword
+            <input id="aiKeyword" type="text" placeholder="tinee" />
+          </label>
+        </div>
+        <div class="channels">
+          <div class="channels-header">
+            <h3>Allowed channels</h3>
+            <label class="toggle">
+              <input id="allowAllChannels" type="checkbox" />
+              <span>Allow all channels</span>
+            </label>
+          </div>
+          <div id="channelsList" class="channels-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Music Settings</h2>
+        <div class="grid">
+          <label class="toggle">
+            <input id="autoplay" type="checkbox" />
+            <span>Autoplay when queue ends</span>
+          </label>
+          <label>
+            Volume
+            <div class="range">
+              <input id="volumeRange" type="range" min="0" max="200" step="1" />
+              <input id="volumeNumber" type="number" min="0" max="200" step="1" />
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="actions">
+          <button id="saveBtn" disabled>Save changes</button>
+          <span id="status" class="status">Idle</span>
+        </div>
+      </section>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

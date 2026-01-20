@@ -19,7 +19,7 @@ A Discord bot with slash commands, AI chat replies, and basic music playback.
 3. Install dependencies:
 
 ```bash
-pip install -U discord.py[voice] openai python-dotenv yt-dlp
+pip install -U discord.py[voice] openai python-dotenv yt-dlp aiohttp
 ```
 
 4. Run the bot:
@@ -33,6 +33,10 @@ python bot.py
 - `OPENAI_API_KEY` (optional): enables AI replies.
 - `OPENAI_MODEL` (optional): defaults to `gpt-4`.
 - `FFMPEG_PATH` (optional): path to `ffmpeg` binary if not on PATH.
+- `CONFIG_API_ENABLED` (optional): enable the config API (`true`/`false`).
+- `CONFIG_API_HOST` (optional): bind host for the config API (default `127.0.0.1`).
+- `CONFIG_API_PORT` (optional): bind port for the config API (default `8080`).
+- `CONFIG_API_TOKEN` (optional): token for API requests if you expose it.
 
 ## Commands
 - `/greeting`: say hi.
@@ -59,3 +63,26 @@ python bot.py
 ## Notes
 - The bot only responds in servers (not DMs).
 - AI replies can trigger by keyword, mention, or both depending on per-server config.
+
+## Web UI (local)
+The bot can expose a small config API, and you can use a local web UI to edit settings.
+
+1. On the bot host, enable the API in `.env`:
+
+```bash
+CONFIG_API_ENABLED=true
+CONFIG_API_HOST=0.0.0.0
+CONFIG_API_PORT=8080
+```
+
+2. Restart the bot.
+3. On your local machine, run a simple static server:
+
+```bash
+cd web
+python -m http.server 8000
+```
+
+4. Open `http://localhost:8000` and set the API base URL to `http://<bot-host>:8080`.
+
+If you expose the API beyond localhost, set `CONFIG_API_TOKEN` and fill it in the UI.
