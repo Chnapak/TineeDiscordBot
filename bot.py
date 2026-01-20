@@ -9,8 +9,9 @@ import yt_dlp as youtube_dl
 import asyncio
 import json
 import random
+import re
 from asyncio import Lock
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from aiohttp import web
 
 # KEYS
@@ -42,6 +43,20 @@ FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max
 FFMPEG_OPTIONS = "-vn"
 SYSTEM_PROMPT = "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."
 CONFIG_FILE = "guild_config.json"
+MAX_REMINDER_SECONDS = 7 * 24 * 60 * 60
+POLL_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+QUOTES = [
+    "Keep it simple, keep it fun.",
+    "Small steps beat no steps.",
+    "Progress, not perfection.",
+    "If it works, it ships.",
+    "Less noise, more signal.",
+    "Make it work, then make it nice.",
+    "Stay curious.",
+    "Bugs fear the patient.",
+    "Build, learn, repeat.",
+    "One thing at a time."
+]
 
 def new_guild_config():
     return {
@@ -224,6 +239,31 @@ def format_timedelta(delta):
         parts.append(f"{minutes}m")
     parts.append(f"{seconds}s")
     return " ".join(parts)
+
+def parse_duration(text):
+    if not text:
+        return None
+    value = text.strip().lower()
+    if value.isdigit():
+        return int(value) * 60
+    matches = re.findall(r"(\d+)\s*([smhd])", value)
+    if not matches:
+        return None
+    total = 0
+    for amount, unit in matches:
+        amount_int = int(amount)
+        if unit == "s":
+            total += amount_int
+        elif unit == "m":
+            total += amount_int * 60
+        elif unit == "h":
+            total += amount_int * 3600
+        elif unit == "d":
+            total += amount_int * 86400
+    remainder = re.sub(r"(\d+)\s*[smhd]", "", value).strip()
+    if remainder:
+        return None
+    return total
 
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
@@ -466,7 +506,7 @@ async def help_command(interaction: discord.Interaction):
         name="User",
         value=(
             "/greeting, /ping, /uptime, /avatar, /userinfo, /serverinfo, "
-            "/roll, /coinflip, /choose, /8ball"
+            "/roll, /coinflip, /choose, /8ball, /poll, /remind, /quote"
         ),
         inline=False
     )
@@ -619,6 +659,66 @@ async def eight_ball(interaction: discord.Interaction, question: str):
     ]
     answer = random.choice(responses)
     await interaction.response.send_message(f"Question: {question}\nAnswer: {answer}")
+
+@bot.tree.command(name="poll", description="Creates a poll with up to 10 options.")
+async def poll(interaction: discord.Interaction, question: str, options: str):
+    if await check_command_blocked(interaction):
+        return
+    raw = options.replace("|", ",")
+    items = [item.strip() for item in raw.split(",") if item.strip()]
+    if len(items) < 2:
+        await interaction.response.send_message("Provide at least two options.", ephemeral=True)
+        return
+    if len(items) > 10:
+        await interaction.response.send_message("Too many options (max 10).", ephemeral=True)
+        return
+    embed = discord.Embed(title="Poll", description=question, color=discord.Color.blurple())
+    for idx, option in enumerate(items):
+        embed.add_field(name=f"{POLL_EMOJIS[idx]} {option}", value="\u200b", inline=False)
+    await interaction.response.send_message(embed=embed)
+    message = await interaction.original_response()
+    for idx in range(len(items)):
+        await message.add_reaction(POLL_EMOJIS[idx])
+
+@bot.tree.command(name="remind", description="Sets a reminder (e.g. 10m, 2h, 1h30m).")
+async def remind(interaction: discord.Interaction, in_time: str, message: str):
+    if await check_command_blocked(interaction):
+        return
+    seconds = parse_duration(in_time)
+    if not seconds or seconds <= 0:
+        await interaction.response.send_message(
+            "Invalid time format. Examples: `10m`, `45s`, `2h`, `1h30m`.",
+            ephemeral=True
+        )
+        return
+    if seconds > MAX_REMINDER_SECONDS:
+        await interaction.response.send_message("Max reminder time is 7 days.", ephemeral=True)
+        return
+    delay_text = format_timedelta(timedelta(seconds=seconds))
+    await interaction.response.send_message(f"Okay! I'll remind you in {delay_text}.", ephemeral=True)
+
+    channel_id = interaction.channel_id
+    guild_id = interaction.guild_id
+    user_id = interaction.user.id
+    reminder_text = message
+
+    async def send_reminder():
+        await asyncio.sleep(seconds)
+        guild = bot.get_guild(guild_id) if guild_id else None
+        channel = guild.get_channel(channel_id) if guild else None
+        user = guild.get_member(user_id) if guild else None
+        if channel:
+            await channel.send(f"{user.mention if user else ''} Reminder: {reminder_text}")
+        elif user:
+            await user.send(f"Reminder: {reminder_text}")
+
+    bot.loop.create_task(send_reminder())
+
+@bot.tree.command(name="quote", description="Shows a random quote.")
+async def quote(interaction: discord.Interaction):
+    if await check_command_blocked(interaction):
+        return
+    await interaction.response.send_message(random.choice(QUOTES))
 
 
 @bot.tree.command(name="sleep", description="Tells Tinee to go to sleep.")

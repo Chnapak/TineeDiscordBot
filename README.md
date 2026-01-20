@@ -39,7 +39,7 @@ python bot.py
 - `CONFIG_API_TOKEN` (optional): token for API requests if you expose it.
 
 ## Commands
-- **User**: `/help`, `/greeting`, `/ping`, `/uptime`, `/avatar`, `/userinfo`, `/serverinfo`, `/roll`, `/coinflip`, `/choose`, `/8ball`
+- **User**: `/help`, `/greeting`, `/ping`, `/uptime`, `/avatar`, `/userinfo`, `/serverinfo`, `/roll`, `/coinflip`, `/choose`, `/8ball`, `/poll`, `/remind`, `/quote`
 - **Music**: `/join`, `/leave`, `/play <query>`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/skip`, `/remove <position>`, `/clear`, `/volume <0-200>`, `/autoplay <true|false>`
 - **Admin**: `/sleep`, `/wake`, `/disable_command <name>`, `/enable_command <name>`, `/config`, `/set_ai <enabled>`, `/set_ai_trigger <keyword|mention|both> [keyword]`, `/set_ai_keyword <keyword>`, `/allow_ai_channel <channel>`, `/block_ai_channel <channel>`, `/clear_ai_channels`
 
