@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 
+from . import embeds
 from . import guards
 from . import state
 from . import storage
@@ -13,7 +14,10 @@ def setup(bot):
         if await guards.check_command_blocked(interaction):
             return
         state.sleeping_guilds.add(interaction.guild.id)
-        await interaction.response.send_message("Tinee is now asleep. She won't respond to commands.", ephemeral=True)
+        await interaction.response.send_message(
+            embed=embeds.success_embed("Sleeping", "Tinee is now asleep. She won't respond to commands."),
+            ephemeral=True
+        )
 
     @bot.tree.command(name="wake", description="Wakes Tinee up.")
     @app_commands.checks.has_permissions(administrator=True)
@@ -21,7 +25,10 @@ def setup(bot):
         if await guards.check_command_blocked(interaction, allow_when_sleeping=True):
             return
         state.sleeping_guilds.discard(interaction.guild.id)
-        await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
+        await interaction.response.send_message(
+            embed=embeds.success_embed("Awake", "Tinee is awake and ready to help!"),
+            ephemeral=True
+        )
 
     @bot.tree.command(name="disable_command", description="Disables a specific bot command.")
     @app_commands.checks.has_permissions(administrator=True)
@@ -31,18 +38,27 @@ def setup(bot):
         disabled_commands = storage.get_disabled_commands(interaction.guild.id)
         if command_name in disabled_commands:
             await interaction.response.send_message(
-                f"The command `{command_name}` is already disabled.",
+                embed=embeds.error_embed(
+                    "Already disabled",
+                    f"The command `{command_name}` is already disabled."
+                ),
                 ephemeral=True
             )
         elif command_name in [cmd.name for cmd in bot.tree.get_commands()]:
             disabled_commands.add(command_name)
             await interaction.response.send_message(
-                f"The command `{command_name}` has been disabled.",
+                embed=embeds.success_embed(
+                    "Command disabled",
+                    f"The command `{command_name}` has been disabled."
+                ),
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"The command `{command_name}` does not exist.",
+                embed=embeds.error_embed(
+                    "Unknown command",
+                    f"The command `{command_name}` does not exist."
+                ),
                 ephemeral=True
             )
 
@@ -55,12 +71,18 @@ def setup(bot):
         if command_name in disabled_commands:
             disabled_commands.discard(command_name)
             await interaction.response.send_message(
-                f"The command `{command_name}` has been enabled.",
+                embed=embeds.success_embed(
+                    "Command enabled",
+                    f"The command `{command_name}` has been enabled."
+                ),
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                f"The command `{command_name}` is not disabled or does not exist.",
+                embed=embeds.error_embed(
+                    "Not disabled",
+                    f"The command `{command_name}` is not disabled or does not exist."
+                ),
                 ephemeral=True
             )
 
@@ -79,18 +101,14 @@ def setup(bot):
             channels_text = ", ".join(channel_labels)
         else:
             channels_text = "all channels"
-        await interaction.response.send_message(
-            "AI enabled: {enabled}\nAI trigger: {trigger}\nAI keyword: {keyword}\nAI channels: {channels}\n"
-            "Autoplay: {autoplay}\nVolume: {volume}%".format(
-                enabled=config.get("ai_enabled", True),
-                trigger=config.get("ai_trigger", "keyword"),
-                keyword=config.get("ai_keyword", "tinee"),
-                channels=channels_text,
-                autoplay=config.get("autoplay", False),
-                volume=config.get("volume", 100)
-            ),
-            ephemeral=True
-        )
+        embed = embeds.info_embed("Server config")
+        embed.add_field(name="AI enabled", value=str(config.get("ai_enabled", True)), inline=True)
+        embed.add_field(name="AI trigger", value=config.get("ai_trigger", "keyword"), inline=True)
+        embed.add_field(name="AI keyword", value=config.get("ai_keyword", "tinee"), inline=True)
+        embed.add_field(name="AI channels", value=channels_text, inline=False)
+        embed.add_field(name="Autoplay", value=str(config.get("autoplay", False)), inline=True)
+        embed.add_field(name="Volume", value=f"{config.get('volume', 100)}%", inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bot.tree.command(name="set_ai", description="Enable or disable AI replies on this server.")
     @app_commands.checks.has_permissions(administrator=True)
@@ -101,7 +119,10 @@ def setup(bot):
         config["ai_enabled"] = enabled
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            f"AI replies are now {'enabled' if enabled else 'disabled'} for this server.",
+            embed=embeds.success_embed(
+                "AI updated",
+                f"AI replies are now {'enabled' if enabled else 'disabled'} for this server."
+            ),
             ephemeral=True
         )
 
@@ -123,7 +144,7 @@ def setup(bot):
                 config["ai_keyword"] = keyword
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            f"AI trigger set to `{mode.value}`.",
+            embed=embeds.success_embed("AI trigger updated", f"AI trigger set to `{mode.value}`."),
             ephemeral=True
         )
 
@@ -134,13 +155,16 @@ def setup(bot):
             return
         keyword = keyword.strip()
         if not keyword:
-            await interaction.response.send_message("Keyword cannot be empty.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Invalid keyword", "Keyword cannot be empty."),
+                ephemeral=True
+            )
             return
         config = storage.get_guild_config(interaction.guild.id)
         config["ai_keyword"] = keyword
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            f"AI keyword set to `{keyword}`.",
+            embed=embeds.success_embed("AI keyword updated", f"AI keyword set to `{keyword}`."),
             ephemeral=True
         )
 
@@ -152,13 +176,19 @@ def setup(bot):
         config = storage.get_guild_config(interaction.guild.id)
         channels = config.get("ai_channels", [])
         if channel.id in channels:
-            await interaction.response.send_message(f"{channel.mention} is already allowed.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Already allowed", f"{channel.mention} is already allowed."),
+                ephemeral=True
+            )
             return
         channels.append(channel.id)
         config["ai_channels"] = channels
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            f"AI replies are now allowed in {channel.mention}.",
+            embed=embeds.success_embed(
+                "Channel allowed",
+                f"AI replies are now allowed in {channel.mention}."
+            ),
             ephemeral=True
         )
 
@@ -171,18 +201,30 @@ def setup(bot):
         channels = config.get("ai_channels", [])
         if not channels:
             await interaction.response.send_message(
-                "AI is allowed in all channels. Use /allow_ai_channel to set a whitelist first.",
+                embed=embeds.error_embed(
+                    "No allow list",
+                    "AI is allowed in all channels. Use /allow_ai_channel to set a whitelist first."
+                ),
                 ephemeral=True
             )
             return
         if channel.id not in channels:
-            await interaction.response.send_message(f"{channel.mention} is not in the allow list.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=embeds.error_embed(
+                    "Not allowed",
+                    f"{channel.mention} is not in the allow list."
+                ),
+                ephemeral=True
+            )
             return
         channels.remove(channel.id)
         config["ai_channels"] = channels
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            f"AI replies are now blocked in {channel.mention}.",
+            embed=embeds.success_embed(
+                "Channel blocked",
+                f"AI replies are now blocked in {channel.mention}."
+            ),
             ephemeral=True
         )
 
@@ -195,7 +237,7 @@ def setup(bot):
         config["ai_channels"] = []
         await storage.save_guild_configs()
         await interaction.response.send_message(
-            "AI replies are now allowed in all channels.",
+            embed=embeds.success_embed("Channels cleared", "AI replies are now allowed in all channels."),
             ephemeral=True
         )
 
@@ -204,8 +246,11 @@ def setup(bot):
     async def admin_only_error(interaction: discord.Interaction, error):
         if isinstance(error, app_commands.errors.MissingPermissions):
             await interaction.response.send_message(
-                "You don't have permission to use this command.",
+                embed=embeds.error_embed("Permission denied", "You don't have permission to use this command."),
                 ephemeral=True
             )
         else:
-            await interaction.response.send_message("An error occurred. Please try again.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=embeds.error_embed("Error", "An error occurred. Please try again."),
+                ephemeral=True
+            )
