@@ -14,9 +14,24 @@ from asyncio import Lock
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+
+def resolve_ffmpeg_path():
+    env_path = os.getenv("FFMPEG_PATH")
+    if env_path:
+        return env_path
+    local_path = os.path.join(os.path.dirname(__file__), "ffmpeg", "bin", "ffmpeg.exe")
+    if os.path.exists(local_path):
+        return local_path
+    return "ffmpeg"
+
+FFMPEG_PATH = resolve_ffmpeg_path()
+FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+FFMPEG_OPTIONS = "-vn"
 
 user_chats = {}  # Pro uchovávání historie chatu
 user_locks = {}  # Zámky pro uživatele
+user_chats_lock = Lock()
 
 
 if not DISCORD_TOKEN:
@@ -33,8 +48,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # BOT EVENTS
 is_sleeping = False  # Global variable for bot state
-user_chats = {}  # For tracking user chats
 disabled_commands = []  # List for disabled commands
+song_queues = {}
+last_song_titles = {}
 
 
 @bot.event
@@ -50,15 +66,19 @@ async def on_ready():
 def load_user_chats():
     global user_chats
     try:
-        with open("user_chats.json", "r") as file:
+        with open("user_chats.json", "r", encoding="utf-8") as file:
             user_chats = json.load(file)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         user_chats = {}
 
 # Funkce pro uložení historie uživatelů
-def save_user_chats():
-    with open("user_chats.json", "w") as file:
+def save_user_chats_sync():
+    with open("user_chats.json", "w", encoding="utf-8") as file:
         json.dump(user_chats, file)
+
+async def save_user_chats():
+    async with user_chats_lock:
+        await asyncio.to_thread(save_user_chats_sync)
 
 # Načti historii při spuštění
 load_user_chats()
@@ -68,6 +88,14 @@ async def get_user_lock(user_id):
     if user_id not in user_locks:
         user_locks[user_id] = Lock()
     return user_locks[user_id]
+
+async def fetch_openai_response(messages):
+    def _call_openai():
+        return openai.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages
+        )
+    return await asyncio.to_thread(_call_openai)
 
 @bot.event
 async def on_message(message):
@@ -90,19 +118,24 @@ async def on_message(message):
             # Přidání zprávy uživatele
             user_chats[user_id].append({"role": "user", "content": message.content})
 
-            # Omezit velikost historie
+            # Omezit velikost historie, ale zachovat system prompt
             max_messages = 100
-            user_chats[user_id] = user_chats[user_id][-max_messages:]
+            history = user_chats[user_id]
+            if len(history) > max_messages:
+                system_prompt = history[0] if history and history[0].get("role") == "system" else None
+                recent = history[-(max_messages - 1):]
+                if system_prompt and system_prompt not in recent:
+                    history = [system_prompt] + recent
+                else:
+                    history = recent
+                user_chats[user_id] = history
 
             if not OPENAI_API_KEY:
                 await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
                 return
 
             try:
-                response = openai.chat.completions.create(
-                    model="gpt-4",
-                    messages=user_chats[user_id]
-                )
+                response = await fetch_openai_response(user_chats[user_id])
                 bot_response = response.choices[0].message.content
                 user_chats[user_id].append({"role": "assistant", "content": bot_response})
                 await message.channel.send(bot_response)
@@ -111,16 +144,19 @@ async def on_message(message):
                 await message.channel.send("Something went wrong, try again later.")
 
             # Uložit historii po každé zprávě
-            save_user_chats()
+            await save_user_chats()
     else:
         await bot.process_commands(message)
 
 
-# Helper function to check if a command is disabled
-async def check_command_disabled(interaction: discord.Interaction):
+# Helper function to check if a command is disabled or bot is sleeping
+async def check_command_blocked(interaction: discord.Interaction, allow_when_sleeping=False):
     global disabled_commands
     if interaction.command.name in disabled_commands:
         await interaction.response.send_message(f"The command `{interaction.command.name}` is currently disabled.", ephemeral=True)
+        return True
+    if is_sleeping and not allow_when_sleeping:
+        await interaction.response.send_message("Tinee is asleep. Use /wake to wake her.", ephemeral=True)
         return True
     return False
 
@@ -128,7 +164,7 @@ async def check_command_disabled(interaction: discord.Interaction):
 # BOT COMMANDS
 @bot.tree.command(name="greeting", description="Sends one back!")
 async def greeting(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
         return
     await interaction.response.send_message(f"Hello, {interaction.user.mention}!")
 
@@ -136,7 +172,7 @@ async def greeting(interaction: discord.Interaction):
 @bot.tree.command(name="sleep", description="Tells Tinee to go to sleep.")
 @app_commands.checks.has_permissions(administrator=True)
 async def sleep(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
         return
     global is_sleeping
     is_sleeping = True
@@ -146,7 +182,7 @@ async def sleep(interaction: discord.Interaction):
 @bot.tree.command(name="wake", description="Wakes Tinee up.")
 @app_commands.checks.has_permissions(administrator=True)
 async def wake(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction, allow_when_sleeping=True):
         return
     global is_sleeping
     is_sleeping = False
@@ -155,7 +191,10 @@ async def wake(interaction: discord.Interaction):
 
 @bot.tree.command(name="join", description="Bot joins your current voice channel.")
 async def join(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
     if interaction.user.voice:
         channel = interaction.user.voice.channel
@@ -170,7 +209,10 @@ async def join(interaction: discord.Interaction):
 
 @bot.tree.command(name="leave", description="Bot leaves the voice channel.")
 async def leave(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
     voice_client = interaction.guild.voice_client
 
@@ -182,11 +224,29 @@ async def leave(interaction: discord.Interaction):
 
 
 # Fronta skladeb (globalní proměnná)
-song_queue = []
+def get_guild_queue(guild_id):
+    if guild_id not in song_queues:
+        song_queues[guild_id] = []
+    return song_queues[guild_id]
+
+YDL_OPTS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "quiet": True,
+}
+
+async def youtube_search(query):
+    def _extract_info():
+        with youtube_dl.YoutubeDL(YDL_OPTS) as ydl:
+            return ydl.extract_info(f"ytsearch:{query}", download=False)
+    return await asyncio.to_thread(_extract_info)
 
 @bot.tree.command(name="play", description="Plays a song in the voice channel.")
 async def play(interaction: discord.Interaction, search: str):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     # Zkontroluj, zda uživatel je v hlasovém kanálu
@@ -201,67 +261,73 @@ async def play(interaction: discord.Interaction, search: str):
         await channel.connect()
         voice_client = interaction.guild.voice_client
 
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'noplaylist': True,
-        'quiet': True,
-    }
-
     # Defer odpověď
     if not interaction.response.is_done():
         await interaction.response.defer()
 
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(f"ytsearch:{search}", download=False)
-            url = info['entries'][0]['url']
-            title = info['entries'][0]['title']
-        except Exception as e:
+    try:
+        info = await youtube_search(search)
+        entries = info.get("entries") if info else []
+        if not entries:
             await interaction.followup.send("Couldn't find the song. Try a different search.")
             return
+        url = entries[0].get("url")
+        title = entries[0].get("title")
+        if not url or not title:
+            await interaction.followup.send("Couldn't find the song. Try a different search.")
+            return
+    except Exception:
+        await interaction.followup.send("Couldn't find the song. Try a different search.")
+        return
 
     # Přidání skladby do fronty
-    song_queue.append((url, title))
+    queue = get_guild_queue(interaction.guild.id)
+    queue.append((url, title))
     await interaction.followup.send(f"Added `{title}` to the queue!")
 
     # Pokud nic nehraje, spusť první skladbu z fronty
     if not voice_client.is_playing():
-        await play_next_song(voice_client, interaction.channel)
+        await play_next_song(voice_client, interaction.channel, interaction.guild.id)
 
 async def get_similar_song(last_song_title):
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'noplaylist': True,
-        'quiet': True,
-    }
-
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Vyhledání podobné skladby
-            info = ydl.extract_info(f"ytsearch:{last_song_title} similar songs", download=False)
-            similar_url = info['entries'][0]['url']
-            similar_title = info['entries'][0]['title']
-            return similar_url, similar_title
-        except Exception as e:
-            print(f"Error fetching similar song: {e}")
+    try:
+        info = await youtube_search(f"{last_song_title} similar songs")
+        entries = info.get("entries") if info else []
+        if not entries:
             return None, None
+        similar_url = entries[0].get("url")
+        similar_title = entries[0].get("title")
+        return similar_url, similar_title
+    except Exception as e:
+        print(f"Error fetching similar song: {e}")
+        return None, None
 
 
-async def play_next_song(voice_client, channel):
-    if song_queue:
-        url, title = song_queue.pop(0)
-        audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
+async def play_next_song(voice_client, channel, guild_id):
+    if not voice_client or not voice_client.is_connected():
+        return
 
-        def after_playing(err):
-            if err:
-                print(f"Error after playing: {err}")
-            # Použij bot.loop pro spuštění další skladby
-            coro = play_next_song(voice_client, channel)
-            fut = asyncio.run_coroutine_threadsafe(coro, bot.loop)
-            try:
-                fut.result()
-            except Exception as e:
-                print(f"Error in after_playing: {e}")
+    def after_playing(err):
+        if err:
+            print(f"Error after playing: {err}")
+        # Použij bot.loop pro spuštění další skladby
+        coro = play_next_song(voice_client, channel, guild_id)
+        fut = asyncio.run_coroutine_threadsafe(coro, bot.loop)
+        try:
+            fut.result()
+        except Exception as e:
+            print(f"Error in after_playing: {e}")
+
+    queue = get_guild_queue(guild_id)
+    if queue:
+        url, title = queue.pop(0)
+        last_song_titles[guild_id] = title
+        audio_source = FFmpegPCMAudio(
+            url,
+            executable=FFMPEG_PATH,
+            before_options=FFMPEG_BEFORE_OPTIONS,
+            options=FFMPEG_OPTIONS
+        )
 
         if voice_client.is_playing():
             voice_client.stop()
@@ -271,11 +337,20 @@ async def play_next_song(voice_client, channel):
     else:
         # Pokud je fronta prázdná, hledá podobnou skladbu
         await channel.send("Queue is empty. Searching for a similar song...")
-        last_song_title = song_queue[-1][1] if song_queue else "popular music"
-        url, title = await get_similar_song(last_song_title)
+        seed_title = last_song_titles.get(guild_id)
+        if not seed_title:
+            await channel.send("No previous song found. Add more songs to the queue!")
+            return
+        url, title = await get_similar_song(seed_title)
         if url and title:
-            audio_source = FFmpegPCMAudio(url, executable="C:/Users/atlan/Desktop/bot/ffmpeg/bin/ffmpeg.exe")
-            voice_client.play(audio_source, after=lambda e: asyncio.run_coroutine_threadsafe(play_next_song(voice_client, channel), bot.loop))
+            last_song_titles[guild_id] = title
+            audio_source = FFmpegPCMAudio(
+                url,
+                executable=FFMPEG_PATH,
+                before_options=FFMPEG_BEFORE_OPTIONS,
+                options=FFMPEG_OPTIONS
+            )
+            voice_client.play(audio_source, after=after_playing)
             await channel.send(f"Now playing a recommended song: `{title}`")
         else:
             await channel.send("Couldn't find a similar song. Add more songs to the queue!")
@@ -284,7 +359,10 @@ async def play_next_song(voice_client, channel):
 
 @bot.tree.command(name="pause", description="Pauses the current song.")
 async def pause(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client
@@ -298,7 +376,10 @@ async def pause(interaction: discord.Interaction):
 
 @bot.tree.command(name="resume", description="Resumes the paused song.")
 async def resume(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client
@@ -312,18 +393,25 @@ async def resume(interaction: discord.Interaction):
 
 @bot.tree.command(name="queue", description="Shows the current song queue.")
 async def queue(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
-    if song_queue:
-        queue_list = "\n".join([f"{idx + 1}. {title}" for idx, (_, title) in enumerate(song_queue)])
+    queue = get_guild_queue(interaction.guild.id)
+    if queue:
+        queue_list = "\n".join([f"{idx + 1}. {title}" for idx, (_, title) in enumerate(queue)])
         await interaction.response.send_message(f"Current Queue:\n{queue_list}", ephemeral=True)
     else:
         await interaction.response.send_message("The queue is empty.", ephemeral=True)
 
 @bot.tree.command(name="skip", description="Skips the currently playing song.")
 async def skip(interaction: discord.Interaction):
-    if await check_command_disabled(interaction):
+    if await check_command_blocked(interaction):
+        return
+    if not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client
@@ -332,9 +420,6 @@ async def skip(interaction: discord.Interaction):
         # Ukončení aktuálního přehrávání
         voice_client.stop()
         await interaction.response.send_message("Skipped the current song!")
-        
-        # Spuštění další skladby, pokud existuje
-        await play_next_song(voice_client, interaction.channel)
     else:
         await interaction.response.send_message("No song is currently playing to skip.", ephemeral=True)
 
@@ -343,6 +428,8 @@ async def skip(interaction: discord.Interaction):
 async def disable_command(interaction: discord.Interaction, command_name: str):
     global disabled_commands
 
+    if await check_command_blocked(interaction):
+        return
     if command_name in disabled_commands:
         await interaction.response.send_message(f"The command `{command_name}` is already disabled.", ephemeral=True)
     elif command_name in [cmd.name for cmd in bot.tree.get_commands()]:
@@ -357,6 +444,8 @@ async def disable_command(interaction: discord.Interaction, command_name: str):
 async def enable_command(interaction: discord.Interaction, command_name: str):
     global disabled_commands
 
+    if await check_command_blocked(interaction):
+        return
     if command_name in disabled_commands:
         disabled_commands.remove(command_name)
         await interaction.response.send_message(f"The command `{command_name}` has been enabled.", ephemeral=True)
