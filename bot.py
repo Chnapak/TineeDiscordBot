@@ -96,16 +96,26 @@ last_song_titles = {}
 current_tracks = {}
 config_api_started = False
 config_api_runner = None
+commands_synced = False
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands")
-    except Exception as e:
-        print(f"Failed to sync commands: {e}")
+    global commands_synced
+    if not commands_synced:
+        commands_synced = True
+        try:
+            synced = await bot.tree.sync()
+            print(f"Synced {len(synced)} global commands")
+        except Exception as e:
+            print(f"Failed to sync global commands: {e}")
+        for guild in bot.guilds:
+            try:
+                synced = await bot.tree.sync(guild=guild)
+                print(f"Synced {len(synced)} commands to guild {guild.id}")
+            except Exception as e:
+                print(f"Failed to sync commands for guild {guild.id}: {e}")
     global config_api_started
     if CONFIG_API_ENABLED and not config_api_started:
         config_api_started = True
