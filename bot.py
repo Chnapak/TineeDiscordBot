@@ -28,6 +28,7 @@ def resolve_ffmpeg_path():
 FFMPEG_PATH = resolve_ffmpeg_path()
 FFMPEG_BEFORE_OPTIONS = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTIONS = "-vn"
+SYSTEM_PROMPT = "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."
 
 user_chats = {}  # Pro uchovávání historie chatu
 user_locks = {}  # Zámky pro uživatele
@@ -47,8 +48,8 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # BOT EVENTS
-is_sleeping = False  # Global variable for bot state
-disabled_commands = []  # List for disabled commands
+sleeping_guilds = set()
+disabled_commands_by_guild = {}
 song_queues = {}
 last_song_titles = {}
 
@@ -67,7 +68,14 @@ def load_user_chats():
     global user_chats
     try:
         with open("user_chats.json", "r", encoding="utf-8") as file:
-            user_chats = json.load(file)
+            data = json.load(file)
+        if isinstance(data, dict):
+            if data and all(isinstance(v, list) for v in data.values()):
+                user_chats = {"_legacy": data}
+            else:
+                user_chats = data
+        else:
+            user_chats = {}
     except (FileNotFoundError, json.JSONDecodeError):
         user_chats = {}
 
@@ -80,14 +88,39 @@ async def save_user_chats():
     async with user_chats_lock:
         await asyncio.to_thread(save_user_chats_sync)
 
+def is_guild_sleeping(guild_id):
+    return guild_id in sleeping_guilds
+
+def get_disabled_commands(guild_id):
+    if guild_id not in disabled_commands_by_guild:
+        disabled_commands_by_guild[guild_id] = set()
+    return disabled_commands_by_guild[guild_id]
+
+def get_or_create_user_history(guild_id, user_id):
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    if guild_key not in user_chats:
+        user_chats[guild_key] = {}
+    guild_chats = user_chats[guild_key]
+    if user_key not in guild_chats:
+        legacy = user_chats.get("_legacy", {})
+        if user_key in legacy:
+            guild_chats[user_key] = legacy.pop(user_key)
+            if not legacy:
+                user_chats.pop("_legacy", None)
+        else:
+            guild_chats[user_key] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    return guild_chats[user_key]
+
 # Načti historii při spuštění
 load_user_chats()
 
 # Pomocná funkce pro zámek uživatele
-async def get_user_lock(user_id):
-    if user_id not in user_locks:
-        user_locks[user_id] = Lock()
-    return user_locks[user_id]
+async def get_user_lock(guild_id, user_id):
+    lock_key = f"{guild_id}:{user_id}"
+    if lock_key not in user_locks:
+        user_locks[lock_key] = Lock()
+    return user_locks[lock_key]
 
 async def fetch_openai_response(messages):
     def _call_openai():
@@ -99,45 +132,43 @@ async def fetch_openai_response(messages):
 
 @bot.event
 async def on_message(message):
-    global is_sleeping
-
-    if is_sleeping or message.author.bot or not message.guild:
+    if message.author.bot or not message.guild:
+        return
+    guild_id = message.guild.id
+    if is_guild_sleeping(guild_id):
         return
 
     if "tinee" in message.content.lower():
-        user_id = str(message.author.id)
+        user_id = message.author.id
 
         # Získat zámek pro uživatele
-        user_lock = await get_user_lock(user_id)
+        user_lock = await get_user_lock(guild_id, user_id)
         async with user_lock:
-            if user_id not in user_chats:
-                user_chats[user_id] = [
-                    {"role": "system", "content": "Your name is Tinee, you use she/her pronouns. Keep your messages short to feel realistic."}
-                ]
+            history = get_or_create_user_history(guild_id, user_id)
 
             # Přidání zprávy uživatele
-            user_chats[user_id].append({"role": "user", "content": message.content})
+            history.append({"role": "user", "content": message.content})
 
             # Omezit velikost historie, ale zachovat system prompt
             max_messages = 100
-            history = user_chats[user_id]
             if len(history) > max_messages:
                 system_prompt = history[0] if history and history[0].get("role") == "system" else None
                 recent = history[-(max_messages - 1):]
                 if system_prompt and system_prompt not in recent:
-                    history = [system_prompt] + recent
+                    new_history = [system_prompt] + recent
                 else:
-                    history = recent
-                user_chats[user_id] = history
+                    new_history = recent
+                history.clear()
+                history.extend(new_history)
 
             if not OPENAI_API_KEY:
                 await message.channel.send("Nemám přístup k OpenAI API, takže nemůžu odpovědět. Zkuste to prosím později!")
                 return
 
             try:
-                response = await fetch_openai_response(user_chats[user_id])
+                response = await fetch_openai_response(history)
                 bot_response = response.choices[0].message.content
-                user_chats[user_id].append({"role": "assistant", "content": bot_response})
+                history.append({"role": "assistant", "content": bot_response})
                 await message.channel.send(bot_response)
             except Exception as e:
                 print(f"OpenAI error: {e}")
@@ -150,14 +181,19 @@ async def on_message(message):
 
 
 # Helper function to check if a command is disabled or bot is sleeping
-async def check_command_blocked(interaction: discord.Interaction, allow_when_sleeping=False):
-    global disabled_commands
-    if interaction.command.name in disabled_commands:
-        await interaction.response.send_message(f"The command `{interaction.command.name}` is currently disabled.", ephemeral=True)
+async def check_command_blocked(interaction: discord.Interaction, allow_when_sleeping=False, require_guild=True):
+    if require_guild and not interaction.guild:
+        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return True
-    if is_sleeping and not allow_when_sleeping:
-        await interaction.response.send_message("Tinee is asleep. Use /wake to wake her.", ephemeral=True)
-        return True
+    if interaction.guild:
+        guild_id = interaction.guild.id
+        disabled_commands = get_disabled_commands(guild_id)
+        if interaction.command and interaction.command.name in disabled_commands:
+            await interaction.response.send_message(f"The command `{interaction.command.name}` is currently disabled.", ephemeral=True)
+            return True
+        if is_guild_sleeping(guild_id) and not allow_when_sleeping:
+            await interaction.response.send_message("Tinee is asleep. Use /wake to wake her.", ephemeral=True)
+            return True
     return False
 
 
@@ -174,8 +210,7 @@ async def greeting(interaction: discord.Interaction):
 async def sleep(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
         return
-    global is_sleeping
-    is_sleeping = True
+    sleeping_guilds.add(interaction.guild.id)
     await interaction.response.send_message("Tinee is now asleep. She won't respond to commands.", ephemeral=True)
 
 
@@ -184,17 +219,13 @@ async def sleep(interaction: discord.Interaction):
 async def wake(interaction: discord.Interaction):
     if await check_command_blocked(interaction, allow_when_sleeping=True):
         return
-    global is_sleeping
-    is_sleeping = False
+    sleeping_guilds.discard(interaction.guild.id)
     await interaction.response.send_message("Tinee is awake and ready to help!", ephemeral=True)
 
 
 @bot.tree.command(name="join", description="Bot joins your current voice channel.")
 async def join(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
-        return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
     if interaction.user.voice:
         channel = interaction.user.voice.channel
@@ -211,9 +242,6 @@ async def join(interaction: discord.Interaction):
 async def leave(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
         return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        return
     voice_client = interaction.guild.voice_client
 
     if voice_client:
@@ -223,7 +251,7 @@ async def leave(interaction: discord.Interaction):
         await interaction.response.send_message("I'm not connected to any voice channel!", ephemeral=True)
 
 
-# Fronta skladeb (globalní proměnná)
+# Fronta skladeb (per-guild)
 def get_guild_queue(guild_id):
     if guild_id not in song_queues:
         song_queues[guild_id] = []
@@ -244,9 +272,6 @@ async def youtube_search(query):
 @bot.tree.command(name="play", description="Plays a song in the voice channel.")
 async def play(interaction: discord.Interaction, search: str):
     if await check_command_blocked(interaction):
-        return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     # Zkontroluj, zda uživatel je v hlasovém kanálu
@@ -361,9 +386,6 @@ async def play_next_song(voice_client, channel, guild_id):
 async def pause(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
         return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        return
 
     voice_client = interaction.guild.voice_client
 
@@ -377,9 +399,6 @@ async def pause(interaction: discord.Interaction):
 @bot.tree.command(name="resume", description="Resumes the paused song.")
 async def resume(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
-        return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client
@@ -395,9 +414,6 @@ async def resume(interaction: discord.Interaction):
 async def queue(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
         return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-        return
 
     queue = get_guild_queue(interaction.guild.id)
     if queue:
@@ -409,9 +425,6 @@ async def queue(interaction: discord.Interaction):
 @bot.tree.command(name="skip", description="Skips the currently playing song.")
 async def skip(interaction: discord.Interaction):
     if await check_command_blocked(interaction):
-        return
-    if not interaction.guild:
-        await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
         return
 
     voice_client = interaction.guild.voice_client
@@ -426,14 +439,13 @@ async def skip(interaction: discord.Interaction):
 @bot.tree.command(name="disable_command", description="Disables a specific bot command.")
 @app_commands.checks.has_permissions(administrator=True)
 async def disable_command(interaction: discord.Interaction, command_name: str):
-    global disabled_commands
-
     if await check_command_blocked(interaction):
         return
+    disabled_commands = get_disabled_commands(interaction.guild.id)
     if command_name in disabled_commands:
         await interaction.response.send_message(f"The command `{command_name}` is already disabled.", ephemeral=True)
     elif command_name in [cmd.name for cmd in bot.tree.get_commands()]:
-        disabled_commands.append(command_name)
+        disabled_commands.add(command_name)
         await interaction.response.send_message(f"The command `{command_name}` has been disabled.", ephemeral=True)
     else:
         await interaction.response.send_message(f"The command `{command_name}` does not exist.", ephemeral=True)
@@ -442,12 +454,11 @@ async def disable_command(interaction: discord.Interaction, command_name: str):
 @bot.tree.command(name="enable_command", description="Enables a previously disabled bot command.")
 @app_commands.checks.has_permissions(administrator=True)
 async def enable_command(interaction: discord.Interaction, command_name: str):
-    global disabled_commands
-
     if await check_command_blocked(interaction):
         return
+    disabled_commands = get_disabled_commands(interaction.guild.id)
     if command_name in disabled_commands:
-        disabled_commands.remove(command_name)
+        disabled_commands.discard(command_name)
         await interaction.response.send_message(f"The command `{command_name}` has been enabled.", ephemeral=True)
     else:
         await interaction.response.send_message(f"The command `{command_name}` is not disabled or does not exist.", ephemeral=True)
