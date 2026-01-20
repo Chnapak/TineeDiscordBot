@@ -1,8 +1,11 @@
 import asyncio
+import time
 
 import openai
 
 from . import settings
+from . import state
+from . import stats
 from . import storage
 
 
@@ -37,6 +40,27 @@ async def fetch_openai_response(messages):
     return await asyncio.to_thread(_call_openai)
 
 
+def _is_user_rate_limited(user_id, now_ts):
+    cooldown = settings.AI_COOLDOWN_SECONDS
+    if cooldown <= 0:
+        return False
+    last_ts = state.ai_user_last_response.get(user_id)
+    if not last_ts:
+        return False
+    return (now_ts - last_ts) < cooldown
+
+
+def _is_guild_rate_limited(guild_id, now_ts):
+    limit = settings.AI_GUILD_RATE_LIMIT
+    window = settings.AI_GUILD_WINDOW_SECONDS
+    if limit <= 0 or window <= 0:
+        return False
+    recent = state.ai_guild_recent_responses.get(guild_id, [])
+    recent = [ts for ts in recent if (now_ts - ts) <= window]
+    state.ai_guild_recent_responses[guild_id] = recent
+    return len(recent) >= limit
+
+
 async def handle_message(bot, message):
     if message.author.bot or not message.guild:
         return
@@ -50,6 +74,11 @@ async def handle_message(bot, message):
         return
 
     user_id = message.author.id
+    now_ts = int(time.time())
+    if _is_user_rate_limited(user_id, now_ts) or _is_guild_rate_limited(guild_id, now_ts):
+        await bot.process_commands(message)
+        return
+
     user_lock = await storage.get_user_lock(guild_id, user_id)
     async with user_lock:
         history = storage.get_or_create_user_history(guild_id, user_id)
@@ -79,6 +108,17 @@ async def handle_message(bot, message):
             bot_response = response.choices[0].message.content
             history.append({"role": "assistant", "content": bot_response})
             await message.channel.send(bot_response)
+            response_ts = int(time.time())
+            state.ai_user_last_response[user_id] = response_ts
+            recent = state.ai_guild_recent_responses.get(guild_id, [])
+            window = settings.AI_GUILD_WINDOW_SECONDS
+            if window > 0:
+                recent = [ts for ts in recent if (response_ts - ts) <= window]
+            else:
+                recent = []
+            recent.append(response_ts)
+            state.ai_guild_recent_responses[guild_id] = recent
+            await stats.increment_stat(guild_id, "ai_responses", 1)
         except Exception as e:
             print(f"OpenAI error: {e}")
             await message.channel.send("Something went wrong, try again later.")

@@ -1,13 +1,15 @@
-import asyncio
 import random
+import time
 from datetime import datetime, timezone
 
 import discord
 
 from . import embeds
 from . import guards
+from . import reminders
 from . import settings
 from . import state
+from . import stats
 from . import utils
 
 
@@ -21,7 +23,7 @@ def setup(bot):
             name="User",
             value=(
                 "/greeting, /ping, /uptime, /avatar, /userinfo, /serverinfo, "
-                "/roll, /coinflip, /choose, /8ball, /poll, /remind, /quote"
+                "/roll, /coinflip, /choose, /8ball, /poll, /remind, /stats, /quote"
             ),
             inline=False
         )
@@ -40,6 +42,11 @@ def setup(bot):
                 "/set_ai, /set_ai_trigger, /set_ai_keyword, /allow_ai_channel, "
                 "/block_ai_channel, /clear_ai_channels"
             ),
+            inline=False
+        )
+        embed.add_field(
+            name="Moderation",
+            value="/purge, /slowmode, /lockdown, /unlock",
             inline=False
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -258,18 +265,20 @@ def setup(bot):
         guild_id = interaction.guild_id
         user_id = interaction.user.id
         reminder_text = message
+        remind_at = int(time.time()) + seconds
+        await reminders.add_reminder(guild_id, channel_id, user_id, reminder_text, remind_at)
 
-        async def send_reminder():
-            await asyncio.sleep(seconds)
-            guild = bot.get_guild(guild_id) if guild_id else None
-            channel = guild.get_channel(channel_id) if guild else None
-            user = guild.get_member(user_id) if guild else None
-            if channel:
-                await channel.send(f"{user.mention if user else ''} Reminder: {reminder_text}")
-            elif user:
-                await user.send(f"Reminder: {reminder_text}")
-
-        bot.loop.create_task(send_reminder())
+    @bot.tree.command(name="stats", description="Shows server usage stats.")
+    async def stats_command(interaction: discord.Interaction):
+        if await guards.check_command_blocked(interaction):
+            return
+        data = await stats.get_stats(interaction.guild_id)
+        embed = embeds.info_embed("Server stats")
+        embed.add_field(name="AI responses", value=str(data["ai_responses"]), inline=True)
+        embed.add_field(name="Songs played", value=str(data["songs_played"]), inline=True)
+        embed.add_field(name="Commands used", value=str(data["commands_used"]), inline=True)
+        embed.add_field(name="Reminders sent", value=str(data["reminders_sent"]), inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @bot.tree.command(name="quote", description="Shows a random quote.")
     async def quote(interaction: discord.Interaction):

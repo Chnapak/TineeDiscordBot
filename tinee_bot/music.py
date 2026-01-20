@@ -8,6 +8,7 @@ from . import embeds
 from . import guards
 from . import settings
 from . import state
+from . import stats
 from . import storage
 from . import utils
 
@@ -87,6 +88,7 @@ async def play_next_song(bot, voice_client, channel, guild_id):
             voice_client.stop()
 
         voice_client.play(audio_source, after=after_playing)
+        await stats.increment_stat(guild_id, "songs_played", 1)
         await channel.send(f"Now playing: `{title}`")
     else:
         state.current_tracks.pop(guild_id, None)
@@ -106,6 +108,7 @@ async def play_next_song(bot, voice_client, channel, guild_id):
             state.current_tracks[guild_id] = {"title": title, "url": url}
             audio_source = build_audio_source(url, guild_id)
             voice_client.play(audio_source, after=after_playing)
+            await stats.increment_stat(guild_id, "songs_played", 1)
             await channel.send(f"Now playing a recommended song: `{title}`")
         else:
             await channel.send("Couldn't find a similar song. Add more songs to the queue!")

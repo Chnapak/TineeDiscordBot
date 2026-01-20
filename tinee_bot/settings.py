@@ -11,11 +11,30 @@ CONFIG_API_ENABLED = os.getenv("CONFIG_API_ENABLED", "false").lower() == "true"
 CONFIG_API_HOST = os.getenv("CONFIG_API_HOST", "127.0.0.1")
 CONFIG_API_PORT = os.getenv("CONFIG_API_PORT", "8080")
 CONFIG_API_TOKEN = os.getenv("CONFIG_API_TOKEN")
+DB_FILE = os.getenv("DB_FILE", "bot_data.db")
+AI_COOLDOWN_SECONDS = os.getenv("AI_COOLDOWN_SECONDS", "10")
+AI_GUILD_RATE_LIMIT = os.getenv("AI_GUILD_RATE_LIMIT", "30")
+AI_GUILD_WINDOW_SECONDS = os.getenv("AI_GUILD_WINDOW_SECONDS", "60")
 
 try:
     CONFIG_API_PORT = int(CONFIG_API_PORT)
 except ValueError:
     CONFIG_API_PORT = 8080
+
+try:
+    AI_COOLDOWN_SECONDS = int(AI_COOLDOWN_SECONDS)
+except ValueError:
+    AI_COOLDOWN_SECONDS = 10
+
+try:
+    AI_GUILD_RATE_LIMIT = int(AI_GUILD_RATE_LIMIT)
+except ValueError:
+    AI_GUILD_RATE_LIMIT = 30
+
+try:
+    AI_GUILD_WINDOW_SECONDS = int(AI_GUILD_WINDOW_SECONDS)
+except ValueError:
+    AI_GUILD_WINDOW_SECONDS = 60
 
 
 def resolve_ffmpeg_path():

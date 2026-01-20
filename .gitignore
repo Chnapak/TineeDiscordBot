@@ -8,6 +8,8 @@
 
 # Bot runtime data
 guild_config.json
+user_chats.json
+bot_data.db
 
 # User-specific files
 *.rsuser

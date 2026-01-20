@@ -6,6 +6,8 @@ A Discord bot with slash commands, AI chat replies, and basic music playback.
 - AI replies with short, in-character responses and per-server configuration.
 - Music playback via YouTube search with per-guild queues and settings.
 - Admin controls: `/sleep`, `/wake`, `/disable_command`, `/enable_command`.
+- Moderation helpers: `/purge`, `/slowmode`, `/lockdown`, `/unlock`.
+- Persistent reminders and usage stats stored in SQLite.
 - Persistent user chat history in `user_chats.json`.
 
 ## Requirements
@@ -32,6 +34,10 @@ python bot.py
 - `DISCORD_TOKEN` (required): your bot token.
 - `OPENAI_API_KEY` (optional): enables AI replies.
 - `OPENAI_MODEL` (optional): defaults to `gpt-4`.
+- `DB_FILE` (optional): SQLite DB file for reminders/stats (default `bot_data.db`).
+- `AI_COOLDOWN_SECONDS` (optional): per-user cooldown for AI replies (default `10`).
+- `AI_GUILD_RATE_LIMIT` (optional): max AI replies per guild window (default `30`).
+- `AI_GUILD_WINDOW_SECONDS` (optional): window size in seconds (default `60`).
 - `FFMPEG_PATH` (optional): path to `ffmpeg` binary if not on PATH.
 - `CONFIG_API_ENABLED` (optional): enable the config API (`true`/`false`).
 - `CONFIG_API_HOST` (optional): bind host for the config API (default `127.0.0.1`).
@@ -39,9 +45,10 @@ python bot.py
 - `CONFIG_API_TOKEN` (optional): token for API requests if you expose it.
 
 ## Commands
-- **User**: `/help`, `/greeting`, `/ping`, `/uptime`, `/avatar`, `/userinfo`, `/serverinfo`, `/roll`, `/coinflip`, `/choose`, `/8ball`, `/poll`, `/remind`, `/quote`
+- **User**: `/help`, `/greeting`, `/ping`, `/uptime`, `/avatar`, `/userinfo`, `/serverinfo`, `/roll`, `/coinflip`, `/choose`, `/8ball`, `/poll`, `/remind`, `/stats`, `/quote`
 - **Music**: `/join`, `/leave`, `/play <query>`, `/pause`, `/resume`, `/queue`, `/nowplaying`, `/skip`, `/remove <position>`, `/clear`, `/volume <0-200>`, `/autoplay <true|false>`
 - **Admin**: `/sleep`, `/wake`, `/disable_command <name>`, `/enable_command <name>`, `/config`, `/set_ai <enabled>`, `/set_ai_trigger <keyword|mention|both> [keyword]`, `/set_ai_keyword <keyword>`, `/allow_ai_channel <channel>`, `/block_ai_channel <channel>`, `/clear_ai_channels`
+- **Moderation**: `/purge <1-100>`, `/slowmode <seconds>`, `/lockdown`, `/unlock`
 
 ## Notes
 - The bot only responds in servers (not DMs).
